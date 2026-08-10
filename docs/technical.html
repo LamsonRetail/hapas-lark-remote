@@ -353,8 +353,9 @@
 │  ├─ files.js          tool xuất file → trả link tải thay vì đường dẫn ổ đĩa
 │  ├─ config.js         đọc .env, chọn host theo LARK_DOMAIN
 │  └─ tools/
-│     ├─ index.js       gom spec, chặn trùng tên lúc khởi động
+│     ├─ index.js       gom spec, chặn trùng tên + tool chưa phân loại
 │     ├─ registry.js    biến spec thành tool MCP; execSpec dùng chung với canary
+│     ├─ hints.js       đọc / tạo mới / phá — quyết định client có hỏi lại không
 │     └─ specs/         core · docs · office · base · work   ← thêm tool ở đây
 │
 ├─ test/
@@ -381,6 +382,12 @@
 }</code></pre>
 
 <p class="note">Endpoint trong các file spec đều bóc từ <code>lark-cli &lt;shortcut&gt; --dry-run</code> của bản zip, nên hai bản luôn gọi cùng một API. Sau khi thêm tool, chạy <code>npm run parity</code> để chắc không lệch với bản zip.</p>
+
+<h3>Phân loại tool — vì sao client hỏi lại mãi</h3>
+<p>Mỗi tool phải được xếp vào đúng một nhóm trong <code>tools/hints.js</code>: <b>chỉ đọc</b> (34), <b>tạo mới</b> (14), <b>phá/gửi</b> (12). Nhóm này thành <code>annotations.readOnlyHint</code> / <code>destructiveHint</code> trả về trong <code>tools/list</code>. Không khai báo thì client buộc phải coi mọi tool là có thể sửa dữ liệu và hỏi xác nhận từng cái — kể cả tool chỉ đọc.</p>
+<div class="callout warn">
+  <p><span class="lead">Không suy ra từ HTTP method được.</span> Lark dùng POST cho rất nhiều API tìm kiếm (<code>contact_search_user</code>, <code>drive_search</code>, <code>minutes_search</code>, <code>vc_search</code>). Suy theo method sẽ gắn nhãn "ghi" cho cả một loạt tool chỉ đọc — nên danh sách phải khai báo tay, và <code>assertClassified()</code> ném lỗi lúc khởi động nếu có tool chưa xếp nhóm.</p>
+</div>
 
 <!-- ══════════════════════════════════════════════════════════ -->
 <h2><span class="num">5</span> · Vận hành</h2>

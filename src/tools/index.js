@@ -4,6 +4,7 @@ import office from './specs/office.js';
 import base from './specs/base.js';
 import work from './specs/work.js';
 import { registerAll } from './registry.js';
+import { assertClassified } from './hints.js';
 
 export const TOOLS = [...core, ...docs, ...office, ...base, ...work];
 
@@ -17,6 +18,9 @@ for (const t of TOOLS) {
 
 export const TOOL_COUNT = TOOLS.length;
 export const TOOL_NAMES = TOOLS.map((t) => t.name).sort();
+
+// Mọi tool phải được xếp vào đúng một nhóm đọc/thêm/phá trong hints.js
+assertClassified(TOOL_NAMES);
 
 export function registerTools(server, getToken, actor) {
   return registerAll(server, TOOLS, getToken, actor);

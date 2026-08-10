@@ -1,6 +1,7 @@
 import { larkApi, larkApiAll } from '../lark.js';
 import { auditToolCall } from '../audit.js';
 import { saveFile } from '../files.js';
+import { annotationsFor } from './hints.js';
 
 /**
  * Hạ tầng đăng ký tool.
@@ -84,7 +85,15 @@ export function registerAll(server, specs, getToken, actor = {}) {
   const api = apiFor(getToken, actor);
 
   for (const t of specs) {
-    server.registerTool(t.name, { description: t.desc, inputSchema: t.schema || {} }, async (args = {}) => {
+    const opts = {
+      description: t.desc,
+      inputSchema: t.schema || {},
+      // Không có annotations thì client coi mọi tool là có thể sửa dữ liệu và
+      // hỏi lại từng cái một — xem hints.js.
+      annotations: annotationsFor(t.name),
+    };
+
+    server.registerTool(t.name, opts, async (args = {}) => {
       const started = Date.now();
       const done = (ok, errorMsg, larkCode) =>
         auditToolCall({
