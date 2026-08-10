@@ -30,6 +30,7 @@ export const READ_ONLY = new Set([
   'base_workflow_list',
   'dashboard_block_list',
   'task_search',
+  'approval_search',
   'mail_message',
   'mail_triage',
   'drive_search',

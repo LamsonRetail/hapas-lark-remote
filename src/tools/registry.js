@@ -1,4 +1,4 @@
-import { larkApi, larkApiAll } from '../lark.js';
+import { larkApi, larkApiAll, getBotToken } from '../lark.js';
 import { auditToolCall } from '../audit.js';
 import { saveFile } from '../files.js';
 import { annotationsFor } from './hints.js';
@@ -26,6 +26,18 @@ export function apiFor(getToken, actor) {
     patch: (p, o) => call('PATCH', p, o),
     del: (p, o) => call('DELETE', p, o),
     getAll: async (p, o = {}) => larkApiAll(p, { ...o, token: await getToken() }),
+
+    /**
+     * Gọi bằng token BOT thay vì token của người dùng.
+     *
+     * Chỉ dùng cho API mà Lark KHÔNG nhận user_access_token — approval v4 trả
+     * `99991668: user access token not support`.
+     *
+     * NGUY HIỂM trên server dùng chung: bot thấy nhiều hơn người gọi. Tool nào
+     * dùng hàm này PHẢI tự khoá phạm vi về `api.openId` và KHÔNG BAO GIỜ nhận
+     * user_id từ args — nếu không, ai cũng đọc được dữ liệu của người khác.
+     */
+    callAsBot: async (method, p, opts = {}) => larkApi(method, p, { ...opts, token: await getBotToken() }),
 
     /** Tải nội dung nhị phân rồi trả link tải thay vì đường dẫn ổ đĩa. */
     async fetchToFile(method, p, { name, mime, ...opts } = {}) {

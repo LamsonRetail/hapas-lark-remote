@@ -56,6 +56,49 @@ export default [
     body: ['name'],
   },
 
+  // ── Approval ──────────────────────────────────────────────────────────
+  // Nhóm duy nhất phải chạy as-bot: approval v4 từ chối user_access_token
+  // (`99991668: user access token not support`). Vì bot thấy nhiều hơn người
+  // gọi, `user_id` bị KHOÁ về api.openId — không nhận từ args. Bỏ rào đó là
+  // mở đường cho bất kỳ ai đọc đơn phê duyệt của người khác.
+  {
+    name: 'approval_search',
+    desc:
+      '[APPROVAL] Đơn phê duyệt liên quan tới chính bạn. ' +
+      'scope=to_me (mặc định): đơn đang chờ bạn duyệt. ' +
+      'scope=by_me: đơn bạn đã gửi, trong `days` ngày gần nhất (Lark giới hạn 30 ngày). ' +
+      'Chỉ đọc — không duyệt/từ chối được.',
+    schema: {
+      scope: z.enum(['to_me', 'by_me']).optional(),
+      page_size: z.number().int().min(1).max(100).optional(),
+      page_token: z.string().optional(),
+      days: z.number().int().min(1).max(30).optional().describe('Chỉ dùng cho scope=by_me. Mặc định 30.'),
+    },
+    handler: async (a, api) => {
+      const params = { user_id_type: 'open_id', ...(a.page_token ? { page_token: a.page_token } : {}) };
+      const page_size = a.page_size || 20;
+
+      if (a.scope === 'by_me') {
+        const to = Date.now();
+        const from = to - (a.days || 30) * 86_400_000;
+        return api.callAsBot('POST', '/open-apis/approval/v4/instances/query', {
+          params,
+          body: {
+            user_id: api.openId, // khoá phạm vi, xem ghi chú ở trên
+            page_size,
+            instance_start_time_from: String(from),
+            instance_start_time_to: String(to),
+          },
+        });
+      }
+
+      return api.callAsBot('POST', '/open-apis/approval/v4/tasks/search', {
+        params,
+        body: { user_id: api.openId, page_size },
+      });
+    },
+  },
+
   // ── Mail ──────────────────────────────────────────────────────────────
   {
     name: 'mail_triage',
