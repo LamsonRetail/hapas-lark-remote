@@ -7,7 +7,8 @@
  * chuỗi và user bị đăng xuất giữa chừng. Test này phải PASS trước khi lên production.
  */
 import fs from 'node:fs';
-import { getUser, saveUser, listUsers } from '../src/store.js';
+import { getUser, saveUser } from '../src/store.js';
+import { resolveBearer } from '../src/oauth-as.js';
 
 const BASE = 'http://localhost:8787';
 const bearer = fs.readFileSync(new URL('../.data/.test-bearer', import.meta.url), 'utf8').trim();
@@ -48,8 +49,13 @@ async function call(name) {
   }
 }
 
-const openId = listUsers()[0];
-if (!openId) throw new Error('Chưa có user nào đăng nhập.');
+// Phải là user CỦA CHÍNH bearer, không phải listUsers()[0]: hai cái tình cờ
+// trùng nhau nên bug nằm im, tới khi một user bị xoá rồi thêm lại làm thứ tự
+// khoá trong tokens.json đổi. Lúc đó test ép hết hạn token người A rồi gọi API
+// bằng token người B — không có refresh nào xảy ra và test báo FAIL oan, lại còn
+// ghi đè accessExpiresAt của một người không liên quan.
+const openId = resolveBearer(bearer)?.openId;
+if (!openId) throw new Error('.data/.test-bearer không còn hợp lệ — chạy `npm test` để lấy bearer mới.');
 
 const before = getUser(openId);
 console.log(`User        : ${before.name}`);
