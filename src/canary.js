@@ -203,16 +203,35 @@ async function runOnce() {
   console.log(`[canary] ${probes.length} tool (${writes} ghi), ${bad} đang lỗi`);
 }
 
+/**
+ * Nhiễu ±25% quanh chu kỳ. Chu kỳ cố định có điểm mù: nó rơi vào đúng những
+ * mốc đồng hồ giống nhau mỗi ngày, nên một sự cố lặp lại theo giờ — bảo trì
+ * hằng đêm, job nặng chạy đúng phút :00 — có thể bị hụt đều đặn và canary báo
+ * xanh suốt trong khi người dùng vẫn gặp lỗi.
+ *
+ * Hẹn từng lượt bằng setTimeout thay vì setInterval, vì mỗi lượt cần một
+ * khoảng cách khác nhau.
+ */
+const JITTER = 0.25;
+const nextDelay = () => EVERY_MIN * 60_000 * (1 + (Math.random() * 2 - 1) * JITTER);
+
 export function startCanary() {
   if (!EVERY_MIN) return console.log('  canary : TẮT (CANARY_EVERY_MIN=0)');
   if (!OPEN_ID) return console.log('  canary : TẮT (thiếu CANARY_OPEN_ID)');
 
+  const perDay = (24 * 60) / EVERY_MIN;
   console.log(
-    `  canary : mỗi ${EVERY_MIN} phút, cảnh báo DM tới ${ALERT_TO.slice(0, 12)}…` +
+    `  canary : ~${perDay.toFixed(1)} lượt/ngày (${EVERY_MIN} phút ±${JITTER * 100}%), DM tới ${ALERT_TO.slice(0, 12)}…` +
       (writeEnabled ? ' (có probe ghi)' : ' (chỉ đọc — CANARY_WRITE=0)'),
   );
+
+  const tick = () => {
+    runOnce()
+      .catch((e) => console.error('[canary]', e.message))
+      // Hẹn lượt sau khi lượt này XONG, không phải khi nó bắt đầu — lượt chạy
+      // lâu bất thường sẽ không bị lượt kế chồng lên.
+      .finally(() => setTimeout(tick, nextDelay()).unref());
+  };
   // Chạy ngay một lượt để biết trạng thái lúc khởi động, đừng đợi hết chu kỳ
-  const tick = () => runOnce().catch((e) => console.error('[canary]', e.message));
   setTimeout(tick, 15_000).unref();
-  setInterval(tick, EVERY_MIN * 60_000).unref();
 }
