@@ -44,7 +44,9 @@ export default [
     schema: {
       base_token: z.string(),
       table_id: z.string(),
-      limit: z.number().int().max(500).optional(),
+      // Lark chặn trên 200 (`800010701: Number must be less than or equal to
+      // 200`); schema cũ cho tới 500 nên limit 201–500 ra lỗi khó hiểu.
+      limit: z.number().int().min(1).max(200).optional(),
       offset: z.number().int().optional(),
     },
     method: 'GET',

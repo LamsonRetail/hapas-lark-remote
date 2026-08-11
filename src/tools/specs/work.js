@@ -1,6 +1,14 @@
 import { z } from 'zod';
 
 /** Task / Mail / Minutes / VC / OKR. */
+
+/**
+ * Transcript một cuộc họp một tiếng đã là ~70k ký tự — đổ hết vào hội thoại là
+ * đốt context của người dùng cho thứ họ chưa chắc cần. Trả phần đầu kèm link
+ * tải bản đầy đủ, giống cách slides_xml_get và whiteboard_query đang làm.
+ */
+const TRANSCRIPT_INLINE_MAX = 12000;
+
 export default [
   // ── Task ──────────────────────────────────────────────────────────────
   {
@@ -154,6 +162,11 @@ export default [
   },
 
   // ── Minutes ───────────────────────────────────────────────────────────
+  // Transcript nằm ở `/minutes/{token}/artifacts` (một chuỗi thẳng, kèm
+  // keywords), metadata ở `/minutes/{token}`. KHÔNG có endpoint `/blocks` —
+  // bản đầu gọi vào đó và ăn 404 non-JSON, tức minutes_transcript và
+  // lark_meeting_note CHƯA BAO GIỜ chạy được: audit_logs ghi 5/5 lần gọi đều
+  // lỗi từ 10/08. Canary chỉ gọi tool đọc thuộc nhóm khác nên không chạm tới.
   {
     name: 'minutes_search',
     desc: '[MINUTES] Tìm biên bản họp.',
@@ -164,16 +177,21 @@ export default [
   },
   {
     name: 'minutes_transcript',
-    desc: '[MINUTES] Lấy toàn văn transcript của một biên bản họp.',
-    schema: { minute_token: z.string() },
+    desc:
+      '[MINUTES] Lấy toàn văn transcript của một biên bản họp. ' +
+      'Transcript dài thì trả LINK TẢI kèm phần đầu, thay vì đổ hết vào hội thoại.',
+    schema: {
+      minute_token: z.string().describe('Token hoặc URL Minutes'),
+      max_chars: z.number().int().min(500).optional().describe(`Mặc định ${TRANSCRIPT_INLINE_MAX}. Dài hơn thì kèm link tải bản đầy đủ.`),
+    },
     handler: async (a, api) => {
-      // Gom từng block thay vì dùng +search: cách này không sót chữ nào
-      const r = await api.getAll(`/open-apis/minutes/v1/minutes/${encodeURIComponent(a.minute_token)}/blocks`);
-      const text = r.items
-        .map((b) => b?.paragraph?.elements?.map((e) => e?.text_run?.content || '').join('') || b?.text || '')
-        .filter(Boolean)
-        .join('\n');
-      return { transcript: text, blocks: r.items.length, truncated: r.truncated };
+      const token = extractMinuteToken(a.minute_token);
+      const r = await api.get(`/open-apis/minutes/v1/minutes/${encodeURIComponent(token)}/artifacts`);
+      return {
+        minute_token: token,
+        keywords: r.data?.keywords || [],
+        ...cutTranscript(api, token, r.data?.transcript || '', a.max_chars),
+      };
     },
   },
   {
@@ -208,27 +226,35 @@ export default [
         meta = items[0];
         token = meta.minute_token || meta.token;
         if (items.length > 1) {
-          meta.other_matches = items.slice(1, 6).map((m) => ({ title: m.title, token: m.minute_token || m.token }));
+          meta.other_matches = items.slice(1, 6).map((m) => ({
+            title: plainTitle(m),
+            token: m.minute_token || m.token,
+          }));
         }
       }
 
-      const r = await api.getAll(`/open-apis/minutes/v1/minutes/${encodeURIComponent(token)}/blocks`);
-      let transcript = r.items
-        .map((b) => b?.paragraph?.elements?.map((e) => e?.text_run?.content || '').join('') || b?.text || '')
-        .filter(Boolean)
-        .join('\n');
+      // Kết quả search KHÔNG có `title`, chỉ có `display_info` kèm thẻ <h> đánh
+      // dấu từ khoá khớp — không dùng làm tiêu đề được. Hỏi metadata riêng, và
+      // GỘP vào chứ không ghi đè: `other_matches` chỉ có ở kết quả search.
+      if (!meta?.title) {
+        try {
+          const info = await api.get(`/open-apis/minutes/v1/minutes/${encodeURIComponent(token)}`);
+          meta = { ...(meta || {}), ...(info.data?.minute || {}) };
+        } catch {
+          // Thiếu quyền đọc metadata không được cản việc lấy transcript — giữ
+          // những gì search đã trả, chỉ dựng lại tiêu đề từ display_info.
+          if (meta) meta.title = plainTitle(meta);
+        }
+      }
 
-      const full = transcript.length;
-      if (a.max_chars && transcript.length > a.max_chars) transcript = transcript.slice(0, a.max_chars) + '\n…';
+      const r = await api.get(`/open-apis/minutes/v1/minutes/${encodeURIComponent(token)}/artifacts`);
 
       return {
         minute_token: token,
         title: meta?.title,
         meeting: meta,
-        transcript,
-        transcript_chars: full,
-        blocks: r.items.length,
-        truncated: r.truncated || full !== transcript.length,
+        keywords: r.data?.keywords || [],
+        ...cutTranscript(api, token, r.data?.transcript || '', a.max_chars),
       };
     },
   },
@@ -271,6 +297,35 @@ export default [
 ];
 
 /** Nhận cả URL Minutes lẫn token trần. */
+/**
+ * Tiêu đề từ một kết quả minutes_search. Search chỉ trả `display_info`, trong đó
+ * từ khoá khớp bị bọc thẻ <h>…</h> và phía sau còn dính Keywords/Owner/Duration.
+ * Lấy dòng đầu, bỏ thẻ, giải mã vài entity HTML mà Lark chèn vào.
+ */
+function plainTitle(m) {
+  if (m?.title) return m.title;
+  const first = String(m?.display_info || '').split('\n')[0];
+  return first
+    .replace(/<\/?[a-z]+>/gi, '')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .trim();
+}
+
+function cutTranscript(api, token, transcript, maxChars) {
+  const limit = maxChars || TRANSCRIPT_INLINE_MAX;
+  const chars = transcript.length;
+  if (chars <= limit) return { transcript, transcript_chars: chars, truncated: false };
+  return {
+    transcript: transcript.slice(0, limit) + '\n…',
+    transcript_chars: chars,
+    truncated: true,
+    ...api.saveText(transcript, `${token}-transcript.txt`),
+  };
+}
+
 function extractMinuteToken(input) {
   const m = String(input).match(/\/minutes\/([A-Za-z0-9]+)/);
   return m ? m[1] : String(input).trim();

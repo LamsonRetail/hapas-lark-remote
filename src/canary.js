@@ -6,6 +6,7 @@ import { apiFor, execSpec } from './tools/registry.js';
 import { getValidAccessToken } from './lark-auth.js';
 import { auditToolCall } from './audit.js';
 import { getBotToken, larkApi } from './lark.js';
+import { writeProbes, writeEnabled } from './canary-write.js';
 
 /**
  * Canary — tự gọi vài tool chỉ-đọc theo giờ để biết Lark đổi API TRƯỚC khi có
@@ -30,10 +31,10 @@ const STATE_FILE = path.join(config.dataDir, 'canary.json');
 const FAIL_THRESHOLD = 2;
 
 /**
- * Chỉ tool ĐỌC. Không tạo, không sửa, không gửi gì — canary chạy mỗi giờ, mãi
- * mãi; bất cứ tool nào có tác dụng phụ sẽ thành rác tích tụ.
+ * Tool ĐỌC. Nhóm ghi nằm ở canary-write.js: probe ghi phải tự dọn nên chúng cần
+ * nhiều bước (ghi → đọc lại đối chiếu → xoá), không gói vào một cặp [ten, args].
  */
-function probes() {
+function readProbes() {
   const now = Math.floor(Date.now() / 1000);
   return [
     ['lark_whoami', {}],
@@ -77,23 +78,45 @@ async function dm(text) {
   }
 }
 
+/** Gộp probe đọc và ghi về cùng một dạng `{ name, args, run }`. */
+async function allProbes(api, state) {
+  const list = [];
+  for (const [name, args] of readProbes()) {
+    const spec = TOOLS.find((t) => t.name === name);
+    if (spec) list.push({ name, args, run: () => execSpec(spec, args, api) });
+  }
+  if (!writeEnabled) return list;
+
+  try {
+    list.push(...(await writeProbes(api, state)));
+  } catch (e) {
+    // Dựng khu nháp hỏng thì báo như một probe hỏng, đừng làm chết cả canary
+    list.push({
+      name: 'canary_write_setup',
+      args: {},
+      run: () => {
+        throw new Error(`không dựng được khu nháp: ${e.message}`);
+      },
+    });
+  }
+  return list;
+}
+
 async function runOnce() {
   const state = loadState();
   const api = apiFor(() => getValidAccessToken(OPEN_ID), { openId: OPEN_ID, name: 'canary' });
 
   const broke = [];
   const healed = [];
+  const probes = await allProbes(api, state);
 
-  for (const [name, args] of probes()) {
-    const spec = TOOLS.find((t) => t.name === name);
-    if (!spec) continue;
-
+  for (const { name, args, run } of probes) {
     const started = Date.now();
     let ok = true;
     let err = null;
     let code = null;
     try {
-      await execSpec(spec, args, api);
+      await run();
     } catch (e) {
       ok = false;
       err = e.message;
@@ -133,15 +156,19 @@ async function runOnce() {
   }
   if (healed.length) await dm(`✅ Lark MCP — đã chạy lại: ${healed.join(', ')}`);
 
-  const bad = Object.values(state).filter((s) => s.fails > 0).length;
-  console.log(`[canary] ${probes().length} tool, ${bad} đang lỗi`);
+  const bad = Object.values(state).filter((s) => s?.fails > 0).length;
+  const writes = probes.length - readProbes().length;
+  console.log(`[canary] ${probes.length} tool (${writes} ghi), ${bad} đang lỗi`);
 }
 
 export function startCanary() {
   if (!EVERY_MIN) return console.log('  canary : TẮT (CANARY_EVERY_MIN=0)');
   if (!OPEN_ID) return console.log('  canary : TẮT (thiếu CANARY_OPEN_ID)');
 
-  console.log(`  canary : mỗi ${EVERY_MIN} phút, cảnh báo DM tới ${ALERT_TO.slice(0, 12)}…`);
+  console.log(
+    `  canary : mỗi ${EVERY_MIN} phút, cảnh báo DM tới ${ALERT_TO.slice(0, 12)}…` +
+      (writeEnabled ? ' (có probe ghi)' : ' (chỉ đọc — CANARY_WRITE=0)'),
+  );
   // Chạy ngay một lượt để biết trạng thái lúc khởi động, đừng đợi hết chu kỳ
   const tick = () => runOnce().catch((e) => console.error('[canary]', e.message));
   setTimeout(tick, 15_000).unref();
