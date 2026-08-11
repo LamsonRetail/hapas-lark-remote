@@ -59,11 +59,7 @@ export default [
       table_id: z.string(),
       fields: z.string().describe('JSON object các trường, ví dụ {"Tên":"A","Số":1}'),
     },
-    handler: async (a, api, h) =>
-      api.post(
-        `/open-apis/base/v3/bases/${encodeURIComponent(a.base_token)}/tables/${encodeURIComponent(a.table_id)}/records/batch_create`,
-        { body: { records: [{ fields: h.jsonArg(a.fields, 'fields') }] } },
-      ),
+    handler: async (a, api, h) => batchCreate(api, a, [{ fields: h.jsonArg(a.fields, 'fields') }]),
   },
   {
     name: 'base_record_batch_create',
@@ -75,10 +71,7 @@ export default [
     },
     handler: async (a, api, h) => {
       const recs = h.jsonArg(a.records, 'records');
-      return api.post(
-        `/open-apis/base/v3/bases/${encodeURIComponent(a.base_token)}/tables/${encodeURIComponent(a.table_id)}/records/batch_create`,
-        { body: { records: Array.isArray(recs) ? recs : [recs] } },
-      );
+      return batchCreate(api, a, Array.isArray(recs) ? recs : [recs]);
     },
   },
   {
@@ -173,3 +166,25 @@ export default [
       }),
   },
 ];
+
+/**
+ * Base v3 nhận bản ghi theo dạng CỘT: {fields:["Tên","Số"], rows:[["A",1]]}.
+ * KHÔNG phải {records:[{fields:{…}}]} như bitable v1 — gửi shape cũ thì Lark trả
+ * `800010701 invalid_request: Unrecognized key(s) in object: 'records'`. Shape
+ * này bóc từ `lark-cli base +record-batch-create --dry-run` của bản zip.
+ *
+ * Tool vẫn nhận {fields:{…}} cho từng bản ghi vì đó là dạng dễ viết đúng hơn;
+ * việc dựng ma trận cột nằm ở đây.
+ */
+function batchCreate(api, a, records) {
+  const rows = records.map((r) => (r && typeof r === 'object' && 'fields' in r ? r.fields : r) || {});
+  // Hợp của mọi khoá, giữ thứ tự xuất hiện — bản ghi thiếu trường thì để null
+  const fields = [];
+  for (const row of rows) for (const k of Object.keys(row)) if (!fields.includes(k)) fields.push(k);
+  if (!fields.length) throw new Error('Không có trường nào để ghi.');
+
+  return api.post(
+    `/open-apis/base/v3/bases/${encodeURIComponent(a.base_token)}/tables/${encodeURIComponent(a.table_id)}/records/batch_create`,
+    { body: { fields, rows: rows.map((row) => fields.map((f) => (row[f] === undefined ? null : row[f]))) } },
+  );
+}

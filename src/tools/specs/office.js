@@ -24,22 +24,34 @@ export default [
       range: z.string().optional(),
       no_header: z.boolean().optional(),
     },
-    handler: async (a, api) =>
-      api.post(`/open-apis/sheet_ai/v2/spreadsheets/${encodeURIComponent(sheetToken(a))}/tools/invoke_read`, {
-        body: {
-          ...(a.sheet_id ? { sheet_id: a.sheet_id } : {}),
-          ...(a.sheet_name ? { sheet_name: a.sheet_name } : {}),
-          ...(a.range ? { range: a.range } : {}),
-          ...(a.no_header ? { no_header: true } : {}),
-        },
-      }),
+    handler: async (a, api) => {
+      const token = sheetToken(a);
+      const structure = await invokeSheet(api, 'read', token, 'get_workbook_structure', { excel_id: token });
+      const sheets = structure?.sheets || [];
+      const target =
+        sheets.find((s) => (a.sheet_id && s.sheet_id === a.sheet_id) || (a.sheet_name && s.sheet_name === a.sheet_name)) ||
+        sheets[0];
+      if (!target) throw new Error('Bảng tính không có sub-sheet nào.');
+
+      // Không chỉ định range thì đọc cả vùng lưới, giống +table-get của bản zip
+      const range = a.range || A1(target.row_count, target.column_count);
+      const cells = await invokeSheet(api, 'read', token, 'get_cell_ranges', {
+        excel_id: token,
+        sheet_name: target.sheet_name,
+        ranges: [range],
+        include_styles: true,
+        value_render_option: 'raw_value',
+      });
+      return { sheet: target.sheet_name, range, no_header: Boolean(a.no_header), ...cells };
+    },
   },
   {
     name: 'sheets_table_put',
     desc:
       '[SHEETS] Ghi dữ liệu vào bảng tính ĐÃ TỒN TẠI theo giao thức có kiểu. ' +
       'sheets_json: {"sheets":[{"name":"Sheet1","mode":"overwrite","columns":[...],"data":[[...]],"dtypes":{...}}]}. ' +
-      'mode: overwrite | append. LƯU Ý: giao thức này KHÔNG ghi được công thức — công thức dùng lark_api_call với sheets cells-set.',
+      'mode: overwrite | append. dtypes theo tên kiểu pandas: object (text), int64, float64, bool, datetime64[ns]. ' +
+      'LƯU Ý: KHÔNG ghi được công thức và styles_json chưa hỗ trợ — cả hai dùng lark_api_call với sheets cells-set.',
     schema: {
       spreadsheet_token: z.string().optional(),
       url: z.string().optional(),
@@ -47,14 +59,44 @@ export default [
       styles_json: z.string().optional(),
       dry_run: z.boolean().optional(),
     },
-    handler: async (a, api, h) =>
-      api.post(`/open-apis/sheet_ai/v2/spreadsheets/${encodeURIComponent(sheetToken(a))}/tools/invoke_write`, {
-        body: {
-          ...h.jsonArg(a.sheets_json, 'sheets_json'),
-          ...(a.styles_json ? { styles: h.jsonArg(a.styles_json, 'styles_json') } : {}),
-          ...(a.dry_run ? { dry_run: true } : {}),
-        },
-      }),
+    handler: async (a, api, h) => {
+      const token = sheetToken(a);
+      const payload = h.jsonArg(a.sheets_json, 'sheets_json');
+      const sheets = payload?.sheets;
+      if (!Array.isArray(sheets) || !sheets.length) throw new Error('sheets_json phải có mảng "sheets" không rỗng.');
+
+      let structure = null;
+      const results = [];
+      for (const sheet of sheets) {
+        if (!sheet.name) throw new Error('Mỗi phần tử trong "sheets" phải có "name".');
+        const cells = cellsFor(sheet);
+        if (!cells.length) throw new Error(`Sheet "${sheet.name}" không có dòng nào để ghi.`);
+
+        let startRow = 1;
+        if (sheet.start_cell) {
+          startRow = Number(String(sheet.start_cell).match(/(\d+)/)?.[1] || 1);
+        } else if (sheet.mode === 'append') {
+          // Lark không có "ghi tiếp vào cuối" — phải tự tìm dòng cuối trước
+          structure ||= await invokeSheet(api, 'read', token, 'get_workbook_structure', { excel_id: token });
+          const grid = (structure?.sheets || []).find((s) => s.sheet_name === sheet.name);
+          startRow = grid ? (await lastUsedRow(api, token, sheet.name, grid)) + 1 : 1;
+        }
+
+        const range = A1(cells.length, cells[0].length, startRow);
+        const input = { cells, excel_id: token, range, sheet_name: sheet.name };
+        if (a.dry_run) {
+          results.push({ sheet: sheet.name, range, mode: sheet.mode || 'overwrite', would_send: input });
+          continue;
+        }
+        const out = await invokeSheet(api, 'write', token, 'set_cell_range', input);
+        results.push({ sheet: sheet.name, range, mode: sheet.mode || 'overwrite', ...out });
+      }
+
+      if (a.styles_json) {
+        results.push({ styles: 'BỎ QUA — chưa port sang bản remote, dùng lark_api_call với sheets cells-set-style' });
+      }
+      return { dry_run: Boolean(a.dry_run), written: results };
+    },
   },
   {
     name: 'sheets_workbook_export',
@@ -103,9 +145,16 @@ export default [
   // ── Slides ────────────────────────────────────────────────────────────
   {
     name: 'slides_create',
-    desc: '[SLIDES] Tạo bài trình chiếu từ XML theo lược đồ SML của Lark.',
+    desc:
+      '[SLIDES] Tạo bài trình chiếu từ XML theo lược đồ SML của Lark. ' +
+      'ĐẶT TÊN bằng thẻ <title> ngay trong <presentation> — không có thì file hiện tên RỖNG trong Drive.',
     schema: {
-      xml: z.string().describe('<presentation xmlns="http://www.larkoffice.com/sml/2.0" width="960" height="540">…</presentation>'),
+      xml: z
+        .string()
+        .describe(
+          '<presentation xmlns="http://www.larkoffice.com/sml/2.0" width="960" height="540">' +
+            '<title>Tên bài</title><slide>…</slide></presentation>',
+        ),
     },
     handler: async (a, api) =>
       api.post('/open-apis/slides_ai/v1/xml_presentations', { body: { xml_presentation: { content: a.xml } } }),
@@ -220,6 +269,102 @@ export default [
     },
   },
 ];
+
+// ── Giao thức bảng có kiểu (sheet_ai) ──────────────────────────────────────
+//
+// `/tools/invoke_read` và `/tools/invoke_write` KHÔNG nhận trực tiếp giao thức
+// {sheets:[…]} — chúng nhận {tool_name, input} với `input` là CHUỖI JSON. Phần
+// đổi columns/data/dtypes thành ma trận ô nằm ở phía client, không ở Lark.
+// Gửi thẳng {sheets:[…]} thì Lark trả `99992402 field validation failed`.
+// Shape dưới đây bóc từ `lark-cli sheets +table-put --dry-run` của bản zip.
+
+/** Số serial ngày của Excel (mốc 1899-12-30) — Lark ghi ngày bằng số này. */
+const excelSerial = (value) => {
+  const ms = value instanceof Date ? value.getTime() : Date.parse(String(value));
+  if (Number.isNaN(ms)) return null;
+  return Math.floor(ms / 86_400_000) + 25569;
+};
+
+const A1 = (rows, cols, startRow = 1, startCol = 0) => {
+  const col = (n) => {
+    let s = '';
+    for (let i = n; i >= 0; i = Math.floor(i / 26) - 1) s = String.fromCharCode(65 + (i % 26)) + s;
+    return s;
+  };
+  return `${col(startCol)}${startRow}:${col(startCol + cols - 1)}${startRow + rows - 1}`;
+};
+
+/**
+ * Một ô theo dtype kiểu pandas. Không có dtype thì ghi dạng text — giống hành vi
+ * của bản zip, an toàn cho dữ liệu CSV thô (giữ nguyên số 0 đứng đầu).
+ */
+function cellFor(value, dtype, format) {
+  const d = String(dtype || 'object').toLowerCase();
+  if (value === null || value === undefined) return { value: '' };
+
+  if (d.startsWith('datetime')) {
+    const serial = excelSerial(value);
+    if (serial === null) return { cell_styles: { number_format: '@' }, value: String(value) };
+    return { cell_styles: { number_format: format || 'yyyy-mm-dd' }, value: serial };
+  }
+  if (d === 'bool' || d === 'boolean') return { value: Boolean(value) };
+  if (/^(u?int|float)/.test(d)) {
+    const n = Number(value);
+    const cell = Number.isFinite(n) ? { value: n } : { cell_styles: { number_format: '@' }, value: String(value) };
+    if (format && Number.isFinite(n)) cell.cell_styles = { number_format: format };
+    return cell;
+  }
+  return { cell_styles: { number_format: format || '@' }, value: String(value) };
+}
+
+function cellsFor(sheet) {
+  const cols = sheet.columns || [];
+  const dtypes = sheet.dtypes || {};
+  const formats = sheet.formats || {};
+  const rows = [];
+  // header: ô trơn, KHÔNG number_format — đúng như bản zip gửi
+  if (sheet.header !== false) rows.push(cols.map((c) => ({ value: String(c) })));
+  for (const row of sheet.data || []) {
+    rows.push(cols.map((c, i) => cellFor(row[i], dtypes[c], formats[c])));
+  }
+  return rows;
+}
+
+/** Dòng cuối đang có dữ liệu, để `mode: append` biết ghi từ đâu. */
+async function lastUsedRow(api, token, sheetName, grid) {
+  const r = await invokeSheet(api, 'read', token, 'get_cell_ranges', {
+    excel_id: token,
+    sheet_name: sheetName,
+    ranges: [A1(grid.row_count, grid.column_count)],
+    value_render_option: 'raw_value',
+  });
+  const ranges = r?.ranges || r?.value_ranges || [];
+  const values = ranges[0]?.values || ranges[0]?.cells || [];
+  for (let i = values.length - 1; i >= 0; i--) {
+    const row = values[i] || [];
+    const filled = row.some((c) => {
+      const v = c && typeof c === 'object' ? c.value : c;
+      return v !== null && v !== undefined && String(v) !== '';
+    });
+    if (filled) return i + 1;
+  }
+  return 0;
+}
+
+/** `input` là chuỗi JSON, `output` trả về cũng là chuỗi JSON — bóc luôn cho gọn. */
+async function invokeSheet(api, kind, token, toolName, input) {
+  const r = await api.post(
+    `/open-apis/sheet_ai/v2/spreadsheets/${encodeURIComponent(token)}/tools/invoke_${kind}`,
+    { body: { tool_name: toolName, input: JSON.stringify(input) } },
+  );
+  const out = r.data?.output;
+  if (typeof out !== 'string') return r.data;
+  try {
+    return JSON.parse(out);
+  } catch {
+    return out;
+  }
+}
 
 function sheetToken(a) {
   const t = a.spreadsheet_token || extractToken(a.url);

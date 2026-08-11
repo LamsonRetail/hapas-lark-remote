@@ -1,5 +1,48 @@
 import { z } from 'zod';
 
+/** Thẻ không có thẻ đóng trong nội dung `/fetch` trả về — không tính vào độ sâu. */
+const VOID_TAGS = new Set(['col', 'br', 'img', 'hr', 'input', 'meta', 'link']);
+
+/**
+ * Id của block CẤP CAO NHẤT cuối cùng, để `block_insert_after` chèn vào cuối
+ * tài liệu.
+ *
+ * Không lấy `id` cuối cùng xuất hiện trong chuỗi: tài liệu kết thúc bằng bảng
+ * thì id cuối là ô trong bảng, chèn vào đó thì nội dung rơi VÀO TRONG ô. Phải
+ * đếm độ sâu thẻ để biết đâu là cấp cao nhất.
+ *
+ * `<ul>`/`<ol>` không có id của riêng nó — dùng id con trực tiếp cuối cùng
+ * (thẻ `<li>`); đã kiểm: Lark chèn ra SAU cả danh sách, không lồng vào trong.
+ *
+ * Không tìm được gì thì trả về chính document_id — id của `<title>`, tức chèn
+ * ngay sau tiêu đề. Đó là hành vi đúng cho tài liệu rỗng.
+ */
+export function lastTopLevelBlockId(content, documentId) {
+  const tag = /<(\/?)([a-zA-Z][\w-]*)([^>]*?)(\/?)>/g;
+  let depth = 0;
+  let start = -1;
+  let m;
+  while ((m = tag.exec(content))) {
+    const [, closing, name, , selfClosing] = m;
+    if (selfClosing || VOID_TAGS.has(name.toLowerCase())) continue;
+    if (closing) {
+      depth = Math.max(0, depth - 1);
+      continue;
+    }
+    if (depth === 0) start = m.index;
+    depth++;
+  }
+  if (start < 0) return documentId;
+
+  const block = content.slice(start);
+  const openTag = block.slice(0, block.indexOf('>') + 1);
+  const own = openTag.match(/\bid="([^"]+)"/);
+  if (own) return own[1];
+
+  const ids = [...block.matchAll(/\bid="([^"]+)"/g)];
+  return ids.length ? ids[ids.length - 1][1] : documentId;
+}
+
 /** Docs / Docx / Drive / Wiki. */
 export default [
   {
@@ -28,10 +71,21 @@ export default [
       document_id: z.string(),
       content: z.string().describe('Nội dung cần chèn (Markdown)'),
     },
-    handler: async (a, api) =>
-      api.put(`/open-apis/docs_ai/v1/documents/${encodeURIComponent(a.document_id)}`, {
-        body: { command: 'append', content: a.content, doc_format: 'markdown' },
-      }),
+    /**
+     * Lark đã BỎ command `append`: giờ chỉ còn str_replace, str_delete,
+     * block_insert_after, block_replace, block_delete, block_move_after,
+     * block_copy_insert_after, overwrite (lỗi 3380002 liệt kê đúng danh sách
+     * này). Không còn cách nào nói "thêm vào cuối" trong một lời gọi — phải
+     * đọc tài liệu để biết block cuối là gì rồi chèn sau nó.
+     */
+    handler: async (a, api) => {
+      const doc = encodeURIComponent(a.document_id);
+      const r = await api.post(`/open-apis/docs_ai/v1/documents/${doc}/fetch`, {});
+      const blockId = lastTopLevelBlockId(r.data?.document?.content || '', a.document_id);
+      return api.put(`/open-apis/docs_ai/v1/documents/${doc}`, {
+        body: { command: 'block_insert_after', block_id: blockId, content: a.content, doc_format: 'markdown' },
+      });
+    },
   },
   {
     name: 'docs_word_count',
