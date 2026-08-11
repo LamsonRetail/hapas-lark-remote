@@ -109,7 +109,7 @@ export function registerAll(server, specs, getToken, actor = {}) {
     server.registerTool(t.name, opts, async (args = {}) => {
       const started = Date.now();
       // `last_seen` trong bảng machines — có throttle 5 phút, xem machines.js
-      touchMachine({ openId: actor.openId, name: actor.name, clientId: actor.clientId });
+      touchMachine({ openId: actor.openId, name: actor.name, clientId: actor.clientId, clientApp: actor.clientApp });
       const done = (ok, errorMsg, larkCode) =>
         auditToolCall({
           openId: actor.openId,

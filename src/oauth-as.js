@@ -37,12 +37,23 @@ setInterval(() => {
   for (const [k, v] of codes) if (v.expiresAt < now) codes.delete(k);
 }, 60_000).unref();
 
+/**
+ * Tên ứng dụng client tự khai lúc đăng ký DCR: "Claude", "Codex",
+ * "Claude Code (lark-remote)". Tra lúc dùng chứ không lưu vào token: token sống
+ * 30 ngày, mà bản ghi client có thể được sửa/xoá trong khoảng đó.
+ *
+ * KHÔNG dùng User-Agent thay thế: nó khác nhau giữa các bước của cùng một client
+ * (Claude gọi OAuth bằng python-httpx nhưng gọi tool bằng Claude-User), nên cùng
+ * một chỗ cắm sẽ ra hai nhãn khác nhau.
+ */
+const appNameOf = (db, clientId) => db.clients[clientId]?.name || null;
+
 export function resolveBearer(token) {
   if (!token) return null;
   const db = load();
   const row = db.tokens[hashToken(token)];
   if (!row || row.expiresAt < Date.now()) return null;
-  return row; // { openId, name, clientId, expiresAt }
+  return { ...row, clientApp: appNameOf(db, row.clientId) }; // { openId, name, clientId, clientApp, expiresAt }
 }
 
 function issueTokens(openId, name, clientId) {
@@ -56,7 +67,7 @@ function issueTokens(openId, name, clientId) {
   // Đây là chỗ duy nhất phát bearer — cả lần cắm đầu và mỗi lần xoay refresh
   // token đều đi qua đây, nên chỉ cần ghi danh tính ở một chỗ. Fire-and-forget:
   // Supabase chết thì người dùng vẫn đăng nhập được.
-  recordAuth({ openId, name, clientId });
+  recordAuth({ openId, name, clientId, clientApp: appNameOf(db, clientId) });
   return { access_token: access, refresh_token: refresh, token_type: 'Bearer', expires_in: ttl / 1000 };
 }
 

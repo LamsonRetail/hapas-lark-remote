@@ -72,6 +72,7 @@ app.post('/mcp', express.json({ limit: '8mb' }), async (req, res) => {
     openId: session.openId,
     name: session.name,
     clientId: session.clientId,
+    clientApp: session.clientApp,
   });
 
   const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });

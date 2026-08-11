@@ -23,6 +23,11 @@ import { sbEnabled, sbFetch } from './supabase.js';
  * một người cắm Claude desktop và Claude web sẽ ra hai dòng, và không có cách
  * nào biết đó là cùng một máy.
  *
+ * `client_app` trả lời "người này dùng CÁI GÌ để nối vào": Claude, Codex,
+ * Claude Code… Lấy từ `client_name` mà client tự khai lúc đăng ký DCR. Đây là
+ * lời tự khai, KHÔNG phải danh tính đã xác thực — ai cũng đăng ký được với tên
+ * bất kỳ. Dùng để thống kê, đừng dùng để phân quyền.
+ *
  * Cùng ba nguyên tắc với audit.js: không bao giờ làm hỏng luồng gọi, không
  * chặn, và lỗi ghi thì chỉ log ra chứ không ném lên.
  */
@@ -39,8 +44,8 @@ export const machineIdFor = (openId, clientId) =>
  * là thứ duy nhất nối dòng này với `audit_logs.client_id`, cắt đi là mất đường
  * truy về xem chỗ cắm đó đã gọi những gì.
  */
-const labelFor = (openId, name, clientId) =>
-  `${name || openId} — connector ${clientId || '?'} (url)`;
+const labelFor = (openId, name, clientId, clientApp) =>
+  `${name || openId} — ${clientApp || 'connector'} ${clientId || '?'} (url)`;
 
 const row = (machineId) => `machines?machine_id=eq.${encodeURIComponent(machineId)}&app_id=eq.${encodeURIComponent(config.appId)}`;
 
@@ -61,6 +66,11 @@ const DEGRADABLE = [
     field: 'user_id',
     detect: (t) => /Could not find the 'user_id' column/.test(t),
     why: "bảng machines chưa có cột 'user_id'",
+  },
+  {
+    field: 'client_app',
+    detect: (t) => /Could not find the 'client_app' column/.test(t),
+    why: "bảng machines chưa có cột 'client_app'",
   },
   {
     field: 'channel',
@@ -101,9 +111,9 @@ async function warn(label, res) {
  * cả ở lần cắm đầu tiên (authorization_code) và mỗi lần xoay refresh_token,
  * nên `last_seen` không bao giờ cũ hơn lần xoay token gần nhất.
  */
-export function recordAuth({ openId, name, clientId }) {
+export function recordAuth({ openId, name, clientId, clientApp }) {
   if (!sbEnabled || !openId) return;
-  void upsert({ openId, name, clientId, activate: true }).catch((e) => console.error(`[machines] ${e.message}`));
+  void upsert({ openId, name, clientId, clientApp, activate: true }).catch((e) => console.error(`[machines] ${e.message}`));
 }
 
 /**
@@ -130,10 +140,10 @@ async function send(label, path, opts) {
  * dòng vừa thu hồi về 'active' (đã dựng đúng cảnh này trong test). Trạng thái
  * thuộc vòng đời auth, không thuộc hoạt động.
  */
-async function upsert({ openId, name, clientId, activate = false }) {
+async function upsert({ openId, name, clientId, clientApp, activate = false }) {
   const machineId = machineIdFor(openId, clientId);
   const now = new Date().toISOString();
-  const optional = { user_id: openId, channel: CHANNEL };
+  const optional = { user_id: openId, channel: CHANNEL, client_app: clientApp || null };
   const withOptional = (o) => {
     const out = { ...o };
     for (const f of usableFields()) out[f] = optional[f];
@@ -148,7 +158,7 @@ async function upsert({ openId, name, clientId, activate = false }) {
     body: [withOptional({
       machine_id: machineId,
       app_id: config.appId,
-      display_name: labelFor(openId, name, clientId),
+      display_name: labelFor(openId, name, clientId, clientApp),
       username: name || null,
       hostname: null, // server không thấy máy người gọi, xem ghi chú đầu file
       os: null,
@@ -165,7 +175,7 @@ async function upsert({ openId, name, clientId, activate = false }) {
     method: 'PATCH',
     prefer: 'return=minimal',
     body: withOptional({
-      display_name: labelFor(openId, name, clientId),
+      display_name: labelFor(openId, name, clientId, clientApp),
       username: name || null,
       version: config.version,
       ...(activate ? { status: 'active' } : {}),
@@ -187,7 +197,7 @@ async function upsert({ openId, name, clientId, activate = false }) {
 const TOUCH_MS = 5 * 60_000;
 const lastTouch = new Map();
 
-export function touchMachine({ openId, name, clientId }) {
+export function touchMachine({ openId, name, clientId, clientApp }) {
   if (!sbEnabled || !openId) return;
   const key = `${openId}|${clientId}`;
   const now = Date.now();
@@ -196,7 +206,7 @@ export function touchMachine({ openId, name, clientId }) {
   if (lastTouch.size > 500) lastTouch.clear();
   lastTouch.set(key, now);
 
-  void upsert({ openId, name, clientId }).catch((e) => console.error(`[machines] touch: ${e.message}`));
+  void upsert({ openId, name, clientId, clientApp }).catch((e) => console.error(`[machines] touch: ${e.message}`));
 }
 
 /**

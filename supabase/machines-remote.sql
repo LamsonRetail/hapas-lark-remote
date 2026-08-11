@@ -26,6 +26,27 @@ comment on column public.machines.user_id is
 -- Truy vấn sẽ dùng nhiều nhất: "người này đã cắm những chỗ nào".
 create index if not exists machines_user_id_idx on public.machines (user_id) where user_id is not null;
 
+-- ── client_app: người dùng nối vào bằng CÁI GÌ ───────────────────────────
+-- Claude | Codex | Claude Code (lark-remote) | … — lấy từ `client_name` mà
+-- client tự khai lúc đăng ký DCR. Trước đây chỉ có `client_id` (chuỗi random),
+-- nhìn bảng không biết được ai đang dùng công cụ nào.
+--
+-- ĐÂY LÀ LỜI TỰ KHAI, không phải danh tính đã xác thực: bất kỳ ai cũng đăng ký
+-- được với `client_name` bất kỳ. Dùng để thống kê, đừng dùng để phân quyền.
+--
+-- NULL với dòng của client zip (không qua DCR) và với dòng bản remote đã tạo
+-- trước khi có cột này.
+alter table public.machines
+  add column if not exists client_app text;
+
+comment on column public.machines.client_app is
+  'Ứng dụng client tự khai qua DCR (Claude, Codex, …). Lời tự khai, không phải danh tính đã xác thực. NULL với client zip.';
+
+-- "Công ty đang dùng những client nào, mỗi cái bao nhiêu người":
+--   select client_app, count(*) from machines
+--    where channel = 'mcp remote' and status = 'active' group by 1 order by 2 desc;
+create index if not exists machines_client_app_idx on public.machines (client_app) where client_app is not null;
+
 -- ── Nới `channel` ────────────────────────────────────────────────────────
 -- NULL vẫn hợp lệ: `channel in (…)` cho NULL ra UNKNOWN, mà CHECK chỉ chặn
 -- khi kết quả là FALSE.
