@@ -73,28 +73,40 @@ export function buildOAuthRouter() {
   const ISS = config.publicUrl;
 
   // ── Metadata: Claude đọc hai file này để biết phải đi đâu ────────────────
-  r.get('/.well-known/oauth-protected-resource', (_req, res) => {
+  // RFC 9728: đường chuẩn là chèn well-known TRƯỚC path của resource, tức
+  // `/.well-known/oauth-protected-resource/mcp`. Đường ở gốc chỉ là dự phòng.
+  // codex-mcp-client thử cả hai biến thể có hậu tố /mcp trước rồi mới lùi về
+  // gốc — nó chạy được nhờ fallback, nhưng client nào không có fallback sẽ tịt.
+  r.get(['/.well-known/oauth-protected-resource', '/.well-known/oauth-protected-resource/mcp'], (_req, res) => {
     res.json({
       resource: ISS,
       authorization_servers: [ISS],
       bearer_methods_supported: ['header'],
     });
   });
-  r.get(['/.well-known/oauth-authorization-server', '/.well-known/openid-configuration'], (_req, res) => {
-    res.json({
-      issuer: ISS,
-      authorization_endpoint: `${ISS}/authorize`,
-      token_endpoint: `${ISS}/token`,
-      registration_endpoint: `${ISS}/register`,
-      revocation_endpoint: `${ISS}/revoke`,
-      revocation_endpoint_auth_methods_supported: ['none', 'client_secret_post'],
-      response_types_supported: ['code'],
-      grant_types_supported: ['authorization_code', 'refresh_token'],
-      code_challenge_methods_supported: ['S256'],
-      token_endpoint_auth_methods_supported: ['none', 'client_secret_post'],
-      scopes_supported: ['lark'],
-    });
-  });
+  r.get(
+    [
+      '/.well-known/oauth-authorization-server',
+      '/.well-known/oauth-authorization-server/mcp',
+      '/.well-known/openid-configuration',
+      '/.well-known/openid-configuration/mcp',
+    ],
+    (_req, res) => {
+      res.json({
+        issuer: ISS,
+        authorization_endpoint: `${ISS}/authorize`,
+        token_endpoint: `${ISS}/token`,
+        registration_endpoint: `${ISS}/register`,
+        revocation_endpoint: `${ISS}/revoke`,
+        revocation_endpoint_auth_methods_supported: ['none', 'client_secret_post'],
+        response_types_supported: ['code'],
+        grant_types_supported: ['authorization_code', 'refresh_token'],
+        code_challenge_methods_supported: ['S256'],
+        token_endpoint_auth_methods_supported: ['none', 'client_secret_post'],
+        scopes_supported: ['lark'],
+      });
+    },
+  );
 
   // ── Dynamic Client Registration ─────────────────────────────────────────
   r.post('/register', express.json(), (req, res) => {
