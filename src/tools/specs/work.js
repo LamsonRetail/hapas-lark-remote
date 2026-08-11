@@ -70,13 +70,19 @@ export default [
       'Chỉ đọc — không duyệt/từ chối được.',
     schema: {
       scope: z.enum(['to_me', 'by_me']).optional(),
-      page_size: z.number().int().min(1).max(100).optional(),
+      page_size: z.number().int().min(5).max(100).optional().describe('5–100, mặc định 20. Lark từ chối dưới 5.'),
       page_token: z.string().optional(),
       days: z.number().int().min(1).max(30).optional().describe('Chỉ dùng cho scope=by_me. Mặc định 30.'),
     },
     handler: async (a, api) => {
-      const params = { user_id_type: 'open_id', ...(a.page_token ? { page_token: a.page_token } : {}) };
-      const page_size = a.page_size || 20;
+      // page_size PHẢI ở query: đặt trong body thì Lark bỏ qua và luôn trả 10
+      // mục. Lark cũng từ chối page_size < 5 (`99992402 field validation
+      // failed`) — đó là lý do schema chặn ở 5 chứ không phải 1.
+      const params = {
+        user_id_type: 'open_id',
+        page_size: a.page_size || 20,
+        ...(a.page_token ? { page_token: a.page_token } : {}),
+      };
 
       if (a.scope === 'by_me') {
         const to = Date.now();
@@ -85,7 +91,6 @@ export default [
           params,
           body: {
             user_id: api.openId, // khoá phạm vi, xem ghi chú ở trên
-            page_size,
             instance_start_time_from: String(from),
             instance_start_time_to: String(to),
           },
@@ -94,7 +99,7 @@ export default [
 
       return api.callAsBot('POST', '/open-apis/approval/v4/tasks/search', {
         params,
-        body: { user_id: api.openId, page_size },
+        body: { user_id: api.openId },
       });
     },
   },
