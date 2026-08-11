@@ -102,6 +102,24 @@ async function allProbes(api, state) {
   return list;
 }
 
+/**
+ * Ghi audit CÓ CHỌN LỌC.
+ *
+ * Canary chạy mỗi giờ và hầu như luôn xanh. Ghi mọi lượt là đổ ~260 dòng/ngày
+ * toàn "vẫn ổn" vào đúng cái bảng dùng để tra "ai đã làm gì" — đã có lúc canary
+ * chiếm 44% bảng mà 100% số đó là ok=true, không dòng nào mang thông tin.
+ *
+ * Chỉ ghi dòng nào TRẢ LỜI ĐƯỢC một câu hỏi:
+ *   - tool lỗi              → dấu vết để soi lúc sự cố
+ *   - vừa chạy lại được     → mốc kết thúc sự cố
+ *   - nhịp tim mỗi ngày một → chứng minh canary còn sống
+ *
+ * Nhịp tim không phải thừa: bỏ nó đi thì canary chết âm thầm trông y hệt "mọi
+ * thứ đều ổn" — không dòng nào, không cảnh báo nào, và không ai biết mình đã
+ * mất hệ thống phát hiện từ bao giờ.
+ */
+const today = () => new Date().toISOString().slice(0, 10);
+
 async function runOnce() {
   const state = loadState();
   const api = apiFor(() => getValidAccessToken(OPEN_ID), { openId: OPEN_ID, name: 'canary' });
@@ -109,6 +127,8 @@ async function runOnce() {
   const broke = [];
   const healed = [];
   const probes = await allProbes(api, state);
+  const startedRun = Date.now();
+  let failing = 0;
 
   for (const { name, args, run } of probes) {
     const started = Date.now();
@@ -123,19 +143,24 @@ async function runOnce() {
       code = e.code;
     }
 
-    auditToolCall({
-      openId: OPEN_ID,
-      userName: 'canary',
-      clientId: 'canary',
-      toolName: name,
-      args,
-      ok,
-      errorMsg: err,
-      larkCode: code,
-      durationMs: Date.now() - started,
-    });
-
     const prev = state[name] || { fails: 0, alerted: false };
+    // Lượt xanh nối tiếp lượt xanh không nói thêm được gì; lượt xanh ngay sau
+    // một chuỗi lỗi thì có — nó là mốc "hết hỏng từ đây".
+    if (!ok || prev.fails > 0) {
+      auditToolCall({
+        openId: OPEN_ID,
+        userName: 'canary',
+        clientId: 'canary',
+        toolName: name,
+        args,
+        ok,
+        errorMsg: err,
+        larkCode: code,
+        durationMs: Date.now() - started,
+      });
+    }
+    if (!ok) failing++;
+
     if (ok) {
       if (prev.alerted) healed.push(name);
       state[name] = { fails: 0, alerted: false };
@@ -146,6 +171,23 @@ async function runOnce() {
       if (fails >= FAIL_THRESHOLD && !prev.alerted) broke.push({ name, err, code });
       state[name] = { fails, alerted: prev.alerted || fails >= FAIL_THRESHOLD, lastError: err, larkCode: code };
     }
+  }
+
+  // Nhịp tim: đúng một dòng mỗi ngày, mang số liệu tổng của lượt chạy.
+  // `__meta` không phải tên tool nên không đụng vòng lặp phía trên.
+  const meta = state.__meta || {};
+  if (meta.heartbeat !== today()) {
+    state.__meta = { ...meta, heartbeat: today() };
+    auditToolCall({
+      openId: OPEN_ID,
+      userName: 'canary',
+      clientId: 'canary',
+      toolName: 'canary_heartbeat',
+      args: { probes: probes.length, failing },
+      ok: failing === 0,
+      errorMsg: failing ? `${failing}/${probes.length} probe đang lỗi` : null,
+      durationMs: Date.now() - startedRun,
+    });
   }
 
   saveState(state);

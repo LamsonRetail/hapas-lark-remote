@@ -13,7 +13,8 @@
     "test:race": "node test/refresh-race.js",
     "parity": "node test/parity-check.js",
     "revoke": "node revoke.js",
-    "token": "node token.js"
+    "token": "node token.js",
+    "test:write": "node test/smoke-write.js"
   },
   "engines": {
     "node": ">=22"
