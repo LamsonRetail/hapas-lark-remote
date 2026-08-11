@@ -6,8 +6,8 @@ Lark của mình và mọi tool chạy đúng dưới danh tính người gọi.
 Khác bản v2 (desktop): **không dùng `lark-cli`**, gọi thẳng REST. Không keychain,
 không profile, không spawn process — nên một tiến trình phục vụ được cả công ty.
 
-> **Kiến trúc, sơ đồ luồng, những chỗ dễ sai:** mở [docs/technical.html](docs/technical.html)
-> bằng trình duyệt. File này chỉ là hướng dẫn vận hành.
+> **Kiến trúc, sơ đồ luồng, những chỗ dễ sai:** [docs/technical.md](docs/technical.md)
+> — sơ đồ vẽ bằng Mermaid, xem trực tiếp trên GitHub. File này chỉ là hướng dẫn vận hành.
 
 ## Chạy
 
