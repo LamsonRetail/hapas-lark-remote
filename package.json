@@ -11,7 +11,8 @@
     "dev": "node --watch src/server.js",
     "test": "node test/e2e.js",
     "test:race": "node test/refresh-race.js",
-    "parity": "node test/parity-check.js"
+    "parity": "node test/parity-check.js",
+    "revoke": "node revoke.js"
   },
   "engines": { "node": ">=22" },
   "dependencies": {
