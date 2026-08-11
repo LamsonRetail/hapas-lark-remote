@@ -46,7 +46,14 @@ setInterval(() => {
  * (Claude gọi OAuth bằng python-httpx nhưng gọi tool bằng Claude-User), nên cùng
  * một chỗ cắm sẽ ra hai nhãn khác nhau.
  */
-const appNameOf = (db, clientId) => db.clients[clientId]?.name || null;
+const appNameOf = (db, clientId) => {
+  if (db.clients[clientId]?.name) return db.clients[clientId].name;
+  // token.js cấp clientId dạng `static-<nhãn>`. Không qua DCR nên không có bản
+  // ghi client để tra tên, nhưng vẫn là chỗ cắm THẬT — hiện rõ nguồn gốc thay
+  // vì để null rồi trông như dòng vô danh trong bảng machines.
+  const m = /^static-(.+)$/.exec(clientId || '');
+  return m ? `static: ${m[1]}` : null;
+};
 
 export function resolveBearer(token) {
   if (!token) return null;

@@ -35,6 +35,18 @@ import { sbEnabled, sbFetch } from './supabase.js';
 /** Nhãn nguồn của dòng, song song với `audit_logs.source = 'url'`. */
 const CHANNEL = 'mcp remote';
 
+/**
+ * clientId của công cụ quản trị chạy tại chỗ — `issueForUser()` mặc định dùng
+ * nó, nên test/e2e.js và mọi script quản trị đều mang nhãn này. Không ghi vào
+ * sổ đăng ký: bảng này trả lời "ai đang dùng cái gì", mà một lượt chạy test
+ * không phải câu trả lời cho câu đó. Không lọc ở đây thì mỗi lần `npm test` lại
+ * mọc một dòng trông y như kết nối thật.
+ *
+ * CỐ Ý không chặn `static-*`: token do token.js cấp là chỗ cắm THẬT (Codex,
+ * n8n…), chỉ khác cách xác thực. Ẩn nó đi là ẩn đúng thứ cần theo dõi.
+ */
+const ADMIN_CLIENT = 'local-admin';
+
 /** machine_id của client zip là 16 ký tự hex; thêm tiền tố để không đụng PK. */
 export const machineIdFor = (openId, clientId) =>
   'url-' + crypto.createHash('sha256').update(`${openId}|${clientId}`).digest('hex').slice(0, 12);
@@ -112,7 +124,7 @@ async function warn(label, res) {
  * nên `last_seen` không bao giờ cũ hơn lần xoay token gần nhất.
  */
 export function recordAuth({ openId, name, clientId, clientApp }) {
-  if (!sbEnabled || !openId) return;
+  if (!sbEnabled || !openId || clientId === ADMIN_CLIENT) return;
   void upsert({ openId, name, clientId, clientApp, activate: true }).catch((e) => console.error(`[machines] ${e.message}`));
 }
 
@@ -198,7 +210,7 @@ const TOUCH_MS = 5 * 60_000;
 const lastTouch = new Map();
 
 export function touchMachine({ openId, name, clientId, clientApp }) {
-  if (!sbEnabled || !openId) return;
+  if (!sbEnabled || !openId || clientId === ADMIN_CLIENT) return;
   const key = `${openId}|${clientId}`;
   const now = Date.now();
   if (now - (lastTouch.get(key) || 0) < TOUCH_MS) return;
