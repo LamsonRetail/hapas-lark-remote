@@ -12,9 +12,12 @@
     "test": "node test/e2e.js",
     "test:race": "node test/refresh-race.js",
     "parity": "node test/parity-check.js",
-    "revoke": "node revoke.js"
+    "revoke": "node revoke.js",
+    "token": "node token.js"
   },
-  "engines": { "node": ">=22" },
+  "engines": {
+    "node": ">=22"
+  },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.30.0",
     "express": "^5.1.0",
