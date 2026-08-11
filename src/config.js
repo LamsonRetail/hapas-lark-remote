@@ -16,7 +16,12 @@ function need(name) {
 
 const DOMAIN = process.env.LARK_DOMAIN || 'lark';
 
+// Một nguồn duy nhất cho số version: package.json. Trước đây server.js ghi tay
+// '3.0.0', thêm chỗ thứ hai cần version là thêm một chỗ để quên cập nhật.
+const pkg = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8'));
+
 export const config = {
+  version: pkg.version,
   appId: need('LARK_APP_ID'),
   appSecret: need('LARK_APP_SECRET'),
   domain: DOMAIN,

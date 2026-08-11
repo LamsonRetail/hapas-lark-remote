@@ -1,5 +1,6 @@
 import { larkApi, larkApiAll, getBotToken } from '../lark.js';
 import { auditToolCall } from '../audit.js';
+import { touchMachine } from '../machines.js';
 import { saveFile } from '../files.js';
 import { annotationsFor } from './hints.js';
 
@@ -107,6 +108,8 @@ export function registerAll(server, specs, getToken, actor = {}) {
 
     server.registerTool(t.name, opts, async (args = {}) => {
       const started = Date.now();
+      // `last_seen` trong bảng machines — có throttle 5 phút, xem machines.js
+      touchMachine({ openId: actor.openId, name: actor.name, clientId: actor.clientId });
       const done = (ok, errorMsg, larkCode) =>
         auditToolCall({
           openId: actor.openId,

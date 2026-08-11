@@ -4,6 +4,8 @@ import path from 'node:path';
 import express from 'express';
 import { config } from './config.js';
 import { startDeviceFlow, pollDeviceFlow, persistTokens } from './lark-auth.js';
+import { deleteUser } from './store.js';
+import { recordAuth, revokeMachines } from './machines.js';
 
 /**
  * OAuth 2.1 Authorization Server cho MCP.
@@ -51,6 +53,10 @@ function issueTokens(openId, name, clientId) {
   db.tokens[hashToken(access)] = { openId, name, clientId, kind: 'access', expiresAt: Date.now() + ttl };
   db.tokens[hashToken(refresh)] = { openId, name, clientId, kind: 'refresh', expiresAt: Date.now() + ttl * 6 };
   save(db);
+  // Đây là chỗ duy nhất phát bearer — cả lần cắm đầu và mỗi lần xoay refresh
+  // token đều đi qua đây, nên chỉ cần ghi danh tính ở một chỗ. Fire-and-forget:
+  // Supabase chết thì người dùng vẫn đăng nhập được.
+  recordAuth({ openId, name, clientId });
   return { access_token: access, refresh_token: refresh, token_type: 'Bearer', expires_in: ttl / 1000 };
 }
 
@@ -80,6 +86,8 @@ export function buildOAuthRouter() {
       authorization_endpoint: `${ISS}/authorize`,
       token_endpoint: `${ISS}/token`,
       registration_endpoint: `${ISS}/register`,
+      revocation_endpoint: `${ISS}/revoke`,
+      revocation_endpoint_auth_methods_supported: ['none', 'client_secret_post'],
       response_types_supported: ['code'],
       grant_types_supported: ['authorization_code', 'refresh_token'],
       code_challenge_methods_supported: ['S256'],
@@ -234,6 +242,47 @@ export function buildOAuthRouter() {
     }
 
     res.status(400).json({ error: 'unsupported_grant_type' });
+  });
+
+  // ── /revoke (RFC 7009) ──────────────────────────────────────────────────
+  //
+  // Thu hồi CẢ grant của chỗ cắm đó, không chỉ riêng token được gửi lên: RFC
+  // 7009 cho phép, và đó là điều người bấm "ngắt kết nối" thật sự muốn — bỏ
+  // access token mà giữ refresh token thì client tự lấy lại được token mới.
+  //
+  // Chỗ cắm CUỐI CÙNG của một người bị thu hồi thì xoá luôn token Lark của họ:
+  // không còn client nào dùng nữa, giữ lại chỉ là để dành một refresh token
+  // sống trên đĩa. Lần sau người đó phải duyệt lại trên Lark — đúng nghĩa
+  // "đã ngắt".
+  //
+  // Luôn trả 200 kể cả token sai, theo RFC: trả lỗi khác nhau là cho người ngoài
+  // dò xem token nào còn sống.
+  r.post('/revoke', express.urlencoded({ extended: true }), express.json(), (req, res) => {
+    const b = { ...req.body, ...req.query };
+    const row = resolveBearer(b.token);
+    if (!row) return res.status(200).end();
+
+    const db = load();
+    const revoked = [];
+    for (const [hash, t] of Object.entries(db.tokens)) {
+      if (t.openId !== row.openId || t.clientId !== row.clientId) continue;
+      revoked.push(t.kind);
+      delete db.tokens[hash];
+    }
+
+    const stillHasClients = new Set(
+      Object.values(db.tokens).filter((t) => t.openId === row.openId).map((t) => t.clientId),
+    );
+    save(db);
+
+    revokeMachines({ openId: row.openId, clientIds: [row.clientId] });
+    if (stillHasClients.size === 0) deleteUser(row.openId);
+
+    console.log(
+      `[revoke] ${row.name || row.openId} / ${row.clientId} — bỏ ${revoked.length} token` +
+        (stillHasClients.size === 0 ? ', hết chỗ cắm nên xoá luôn token Lark' : `, còn ${stillHasClients.size} chỗ cắm`),
+    );
+    res.status(200).end();
   });
 
   return r;

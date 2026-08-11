@@ -1,4 +1,5 @@
 import { config } from './config.js';
+import { sbEnabled, sbFetch } from './supabase.js';
 
 /**
  * Ghi nhật ký thao tác sang Supabase — chung bảng `audit_logs` với client zip,
@@ -21,16 +22,7 @@ const BATCH_MAX = 25;
 const FLUSH_MS = 5000;
 const QUEUE_MAX = 500; // chặn rò rỉ bộ nhớ khi Supabase chết dài
 
-function resolveUrl() {
-  const raw = (process.env.SUPABASE_URL || '').trim().replace(/\/+$/, '');
-  if (!raw) return '';
-  // Dashboard hay hiện Reference ID hơn là URL đầy đủ — nhận cả hai
-  return /^https?:\/\//i.test(raw) ? raw : `https://${raw}.supabase.co`;
-}
-
-const URL_ = resolveUrl();
-const KEY = (process.env.SUPABASE_SERVICE_ROLE_KEY || '').trim();
-export const auditEnabled = Boolean(URL_ && KEY);
+export const auditEnabled = sbEnabled;
 
 let queue = [];
 let timer = null;
@@ -61,17 +53,7 @@ function post(rows) {
   const body = skip.size
     ? rows.map((r) => Object.fromEntries(Object.entries(r).filter(([k]) => !skip.has(k))))
     : rows;
-  return fetch(`${URL_}/rest/v1/audit_logs`, {
-    method: 'POST',
-    headers: {
-      apikey: KEY,
-      Authorization: `Bearer ${KEY}`,
-      'Content-Type': 'application/json',
-      Prefer: 'return=minimal',
-    },
-    body: JSON.stringify(body),
-    signal: AbortSignal.timeout(10000),
-  });
+  return sbFetch('audit_logs', { method: 'POST', body, prefer: 'return=minimal' });
 }
 
 async function flush() {

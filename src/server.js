@@ -63,7 +63,7 @@ app.post('/mcp', express.json({ limit: '8mb' }), async (req, res) => {
   }
 
   const mcp = new McpServer(
-    { name: 'lark-mcp-remote', version: '3.0.0' },
+    { name: 'lark-mcp-remote', version: config.version },
     { capabilities: { tools: {} } },
   );
 
@@ -101,6 +101,7 @@ const server = app.listen(config.port, () => {
   console.log(`  tools  : ${TOOL_COUNT}`);
   console.log(`  users  : ${listUsers().length} đã đăng nhập`);
   console.log(`  audit  : ${auditEnabled ? "Supabase → audit_logs (source='url')" : 'TẮT (thiếu SUPABASE_URL / SERVICE_ROLE_KEY)'}`);
+  console.log(`  machine: ${auditEnabled ? "Supabase → machines (machine_id 'url-*')" : 'TẮT'}`);
   startCanary();
 });
 
