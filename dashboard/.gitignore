@@ -1,0 +1,4 @@
+.vercel
+.env*
+# Số liệu nướng sẵn — chứa tên thật + open_id, không đưa vào git
+preview.html

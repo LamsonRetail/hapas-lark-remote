@@ -1,0 +1,408 @@
+<title>Lark MCP remote — bảng vận hành</title>
+
+<style>
+  /* Nền phải TÁCH hẳn khỏi thẻ. Bản đầu dùng #eef1f5 với #fbfcfd — chênh nhau
+     quá ít nên cả trang đọc thành một mảng trắng phẳng không thấy đâu là khối. */
+  :root {
+    color-scheme: light;
+    --plane: #e4e9f0; --card: #ffffff; --raise: #f1f4f8; --sunken: #eef2f7;
+    --ink: #0d1117; --ink-2: #47505c; --ink-3: #7b8593;
+    --grid: #e6eaef; --rule: #c2cad6; --hairline: rgba(13, 17, 23, .14);
+    --series-1: #2a78d6; --wash: rgba(42, 120, 214, .10);
+    --good: #0ca30c; --warning: #fab219; --serious: #ec835a; --critical: #d03b3b;
+    --chip: rgba(13, 17, 23, .05);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:where(:not([data-theme="light"])) {
+      color-scheme: dark;
+      --plane: #0b0d10; --card: #16191d; --raise: #1d2126; --sunken: #101317;
+      --ink: #f2f5f9; --ink-2: #b4bcc7; --ink-3: #7c8593;
+      --grid: #252a31; --rule: #333a43; --hairline: rgba(255, 255, 255, .10);
+      --series-1: #3987e5; --wash: rgba(57, 135, 229, .14);
+      --chip: rgba(255, 255, 255, .06);
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --plane: #0b0d10; --card: #16191d; --raise: #1d2126; --sunken: #101317;
+    --ink: #f2f5f9; --ink-2: #b4bcc7; --ink-3: #7c8593;
+    --grid: #252a31; --rule: #333a43; --hairline: rgba(255, 255, 255, .10);
+    --series-1: #3987e5; --wash: rgba(57, 135, 229, .14);
+    --chip: rgba(255, 255, 255, .06);
+  }
+
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--plane); color: var(--ink);
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif; font-size: 15px; line-height: 1.5; }
+  .wrap { max-width: 1180px; margin: 0 auto; padding: 26px 20px 60px; display: flex; flex-direction: column; gap: 14px; }
+  .mono { font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace; }
+  .num { font-variant-numeric: tabular-nums; }
+
+  header { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-bottom: 2px; }
+  h1 { font-size: 21px; font-weight: 660; margin: 0; letter-spacing: -.01em; }
+  header .meta { font-size: 12.5px; color: var(--ink-3); margin-top: 3px; }
+
+  /* Nhãn tầng — mốc phân cấp CAO hơn tiêu đề thẻ, để mắt biết đang ở khu nào */
+  .zone { font-size: 12px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
+    color: var(--ink-2); margin: 12px 2px 0; display: flex; align-items: center; gap: 8px; }
+  .zone::after { content: ""; flex: 1; height: 1px; background: var(--hairline); }
+  .zone .n { color: var(--ink-3); font-weight: 600; }
+
+  .card { background: var(--card); border: 1px solid var(--hairline); border-radius: 10px; }
+  .pad { padding: 14px 16px; }
+  h2 { font-size: 11px; font-weight: 660; letter-spacing: .07em; text-transform: uppercase;
+    color: var(--ink-3); margin: 0 0 11px; display: flex; align-items: baseline; gap: 7px; }
+  h2 .n { font-size: 11px; color: var(--ink-3); font-weight: 600; letter-spacing: 0; text-transform: none; }
+
+  .g2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  .g4 { display: grid; grid-template-columns: 1.5fr 1fr 1fr 1fr; gap: 12px; }
+  @media (max-width: 920px) { .g2 { grid-template-columns: 1fr; } .g4 { grid-template-columns: repeat(2, 1fr); } }
+  @media (max-width: 560px) { .g4 { grid-template-columns: 1fr; } }
+
+  /* ── Dải trạng thái (Tầng 1) — thay 3 thẻ to bằng một dải gọn ── */
+  .verdict { display: inline-flex; align-items: center; gap: 9px; font-weight: 640; font-size: 14px;
+    padding: 7px 14px 7px 12px; border-radius: 999px; background: var(--card); border: 1px solid var(--hairline); }
+  .verdict .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--sev); box-shadow: 0 0 0 4px color-mix(in srgb, var(--sev) 20%, transparent); }
+  .statusbar { display: flex; flex-wrap: wrap; padding: 0; overflow: hidden; }
+  .statusbar .item { flex: 1 1 220px; display: flex; gap: 11px; align-items: flex-start; padding: 13px 16px;
+    border-left: 3px solid var(--sev); border-top: 1px solid var(--hairline); }
+  .statusbar .item:first-child { border-top: 0; }
+  @media (min-width: 720px) { .statusbar .item { border-top: 0; border-right: 1px solid var(--hairline); }
+    .statusbar .item:last-child { border-right: 0; } }
+  .statusbar .ic { color: var(--sev); font-size: 13px; line-height: 1.5; }
+  .statusbar .k { font-size: 11.5px; color: var(--ink-3); }
+  .statusbar .v { font-size: 15.5px; font-weight: 640; letter-spacing: -.01em; }
+  .statusbar .d { font-size: 12px; color: var(--ink-2); margin-top: 1px; }
+
+  /* ── KPI (Tầng 2) ── */
+  .kpi { padding: 13px 15px; }
+  .kpi .k { font-size: 11.5px; color: var(--ink-3); }
+  .kpi .v { font-size: 25px; font-weight: 650; letter-spacing: -.02em; line-height: 1.15; margin-top: 3px; }
+  .kpi .d { font-size: 11.5px; color: var(--ink-3); margin-top: 2px; }
+  .kpi.hero { background: var(--wash); border-color: transparent; }
+  .kpi.hero .v { font-size: 30px; }
+  .kpi .v small { font-size: 14px; font-weight: 600; color: var(--ink-3); }
+
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th { text-align: left; font-weight: 600; font-size: 10.5px; letter-spacing: .05em; text-transform: uppercase;
+    color: var(--ink-3); padding: 0 10px 6px 0; border-bottom: 1px solid var(--rule); white-space: nowrap; }
+  td { padding: 7px 10px 7px 0; border-bottom: 1px solid var(--grid); vertical-align: middle; }
+  tr:last-child td { border-bottom: 0; }
+  td.r, th.r { text-align: right; padding-right: 0; }
+  tbody tr:hover td { background: var(--sunken); }
+  .scroll { overflow-x: auto; }
+  .dim { color: var(--ink-2); }
+
+  .pill { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; font-weight: 600;
+    padding: 2px 8px; border-radius: 999px; background: var(--chip); color: var(--ink-2); white-space: nowrap; }
+  .pill .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--sev, var(--ink-3)); flex: none; }
+  .tag { font-size: 11px; padding: 3px 7px; border-radius: 5px; background: var(--chip); color: var(--ink-2); }
+  .tags { display: flex; flex-wrap: wrap; gap: 5px; }
+
+  .legend { display: flex; gap: 13px; margin-bottom: 8px; font-size: 11.5px; color: var(--ink-2); }
+  .legend span { display: inline-flex; align-items: center; gap: 6px; }
+  .legend i { width: 9px; height: 9px; border-radius: 2px; }
+
+  svg { display: block; width: 100%; height: auto; overflow: visible; }
+
+  /* Trạng thái rỗng — nói rõ "không có gì để xử lý" thay vì để trống khó hiểu */
+  .ok-empty { display: flex; align-items: center; gap: 9px; color: var(--ink-2); font-size: 13px; padding: 4px 0 2px; }
+  .ok-empty .ic { color: var(--good); font-size: 14px; }
+
+  #tip { position: fixed; z-index: 30; pointer-events: none; opacity: 0; transition: opacity 90ms;
+    background: var(--ink); color: var(--card); font-size: 12px; padding: 6px 9px; border-radius: 6px; max-width: 250px; }
+  #tip.on { opacity: 1; }
+  @media (prefers-reduced-motion: reduce) { #tip { transition: none; } }
+
+  .note { font-size: 12px; color: var(--ink-3); margin: 10px 0 0; }
+  footer { color: var(--ink-3); font-size: 12px; border-top: 1px solid var(--rule); padding-top: 12px; margin-top: 6px; }
+</style>
+
+<div class="wrap">
+  <header>
+    <div>
+      <h1>Lark MCP remote</h1>
+      <div class="meta" id="meta"></div>
+    </div>
+    <div id="verdict"></div>
+  </header>
+
+  <!-- Tầng 1: dải canh gác -->
+  <section class="statusbar card" id="watchdog"></section>
+
+  <!-- Tầng 2: KPI -->
+  <section class="g4" id="kpi"></section>
+
+  <!-- Tầng 3: xu hướng -->
+  <section class="g2">
+    <div class="card pad">
+      <h2>Lượt gọi theo ngày</h2>
+      <div id="c-daily"></div>
+    </div>
+    <div class="card pad">
+      <h2>Tool dùng nhiều nhất</h2>
+      <div id="c-tools"></div>
+    </div>
+  </section>
+
+  <!-- Tầng 4: cần xử lý -->
+  <div class="zone">Cần xử lý</div>
+  <section class="g2">
+    <div class="card pad">
+      <h2>Tool đang hỏng <span class="n" id="broken-n"></span></h2>
+      <div class="scroll"><table id="t-broken"></table></div>
+      <div id="healed"></div>
+    </div>
+    <div class="card pad">
+      <h2>Lỗi người dùng gặp <span class="n" id="orphan-n"></span></h2>
+      <div class="scroll"><table id="t-orphan"></table></div>
+    </div>
+  </section>
+  <section class="card pad">
+    <h2>Mã lỗi <span class="n" id="codes-n"></span></h2>
+    <div class="scroll"><table id="t-codes"></table></div>
+  </section>
+
+  <!-- Tầng 5: sử dụng -->
+  <div class="zone">Sử dụng</div>
+  <section class="g2">
+    <div class="card pad">
+      <h2>Người dùng <span class="n" id="users-n"></span></h2>
+      <div class="scroll"><table id="t-users"></table></div>
+    </div>
+    <div class="card pad">
+      <h2>Chỗ cắm <span class="n" id="conn-n"></span></h2>
+      <div class="scroll"><table id="t-conn"></table></div>
+    </div>
+  </section>
+  <section class="card pad">
+    <h2>Tool chưa ai gọi <span class="n" id="unused-n"></span></h2>
+    <div class="tags" id="unused"></div>
+  </section>
+
+  <footer id="foot"></footer>
+</div>
+
+<div id="tip" role="status"></div>
+
+<script>
+  /**
+   * Mọi phần của trang đều do JS dựng, nên một lỗi bất kỳ là trắng nguyên trang.
+   * Bắt lỗi ra màn hình để lần sau trang hỏng còn nói được nó hỏng ở đâu.
+   */
+  addEventListener('error', (e) => {
+    const w = document.querySelector('.wrap');
+    if (!w) return;
+    w.insertAdjacentHTML('afterbegin',
+      '<div class="card pad" style="border-color: var(--critical)">' +
+      '<h2 style="color: var(--critical)">Trang dựng lỗi</h2>' +
+      '<div class="mono" style="font-size: 12px">' + String(e.message || e.error || 'không rõ') + '</div></div>');
+  });
+
+  const DATA = /*__DATA__*/null;
+
+  const $ = (id) => document.getElementById(id);
+  const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  const nf = (n) => new Intl.NumberFormat('vi-VN').format(n);
+  const dt = (s) => (s ? new Date(s).toLocaleString('vi-VN', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '—');
+  const day2 = (s) => s.slice(8, 10) + '/' + s.slice(5, 7);
+  // Locale vi ngăn nghìn bằng dấu chấm: nf(1274)+' ms' đọc thành 1,274 ms.
+  const ms = (v) => (v == null ? '—' : v < 1000 ? v + ' ms' : (v / 1000).toFixed(2).replace('.', ',') + ' s');
+  const ageH = (s) => (s ? (Date.now() - new Date(s)) / 3600000 : Infinity);
+  const age = (s) => {
+    const h = ageH(s);
+    if (!isFinite(h)) return 'chưa có';
+    if (h < 1) return Math.round(h * 60) + ' phút trước';
+    if (h < 48) return h.toFixed(1).replace('.0', '') + ' giờ trước';
+    return Math.round(h / 24) + ' ngày trước';
+  };
+
+  const tip = $('tip');
+  function bindTip(el, html) {
+    el.setAttribute('tabindex', '0');
+    const show = (e) => {
+      tip.innerHTML = html; tip.classList.add('on');
+      const r = el.getBoundingClientRect();
+      tip.style.left = Math.min(innerWidth - 260, Math.max(8, (e && e.clientX ? e.clientX : r.left + r.width / 2) - 60)) + 'px';
+      tip.style.top = Math.max(8, r.top - 42) + 'px';
+    };
+    const hide = () => tip.classList.remove('on');
+    el.addEventListener('mouseenter', show); el.addEventListener('mousemove', show);
+    el.addEventListener('mouseleave', hide); el.addEventListener('focus', show); el.addEventListener('blur', hide);
+  }
+
+  $('meta').innerHTML = `${dt(DATA.from)} → ${dt(DATA.to)} · dựng ${dt(DATA.generatedAt)}`;
+
+  // ── canh gác + phán quyết tổng ───────────────────────────────────────
+  const w = DATA.watchdog, sess = w.session || {};
+  const cAge = ageH(w.canary && w.canary.at), iAge = ageH(w.ingest && w.ingest.at);
+  const ICON = { good: '●', warning: '▲', serious: '▲', critical: '■' };
+  const RANK = { good: 0, warning: 1, serious: 2, critical: 3 };
+
+  const watches = [
+    { sev: !w.canary ? 'critical' : cAge > 36 ? 'critical' : w.canary.failing ? 'serious' : 'good',
+      k: 'Canary', v: !w.canary ? 'Không có nhịp tim' : `${w.canary.probes} probe · ${w.canary.failing} lỗi`,
+      d: cAge > 36 ? 'Quá 36h không có nhịp tim — bộ phát hiện coi như đã chết' : age(w.canary && w.canary.at) },
+    { sev: sess.deadCount ? 'critical' : sess.dyingCount ? 'warning' : 'good',
+      k: 'Phiên Lark', v: `${sess.alive ?? '—'} sống`,
+      d: sess.deadCount ? `${sess.deadCount} vừa mất` : sess.dyingCount ? `${sess.dyingCount} sắp hết hạn` : 'Không có phiên sắp hết' },
+    { sev: iAge > 24 ? 'critical' : iAge > 6 ? 'warning' : 'good',
+      k: 'Đường nạp dữ liệu', v: age(w.ingest && w.ingest.at),
+      d: iAge > 6 ? 'Lâu bất thường — kiểm tra server còn ghi audit không' : 'Dòng audit gần nhất còn tươi' },
+  ];
+
+  $('watchdog').innerHTML = watches.map((c) => `<div class="item sev-x" style="--sev: var(--${c.sev})">
+      <div class="ic" aria-hidden="true">${ICON[c.sev]}</div>
+      <div><div class="k">${esc(c.k)}</div><div class="v">${esc(c.v)}</div><div class="d">${esc(c.d)}</div></div>
+    </div>`).join('');
+
+  const worst = watches.reduce((a, c) => (RANK[c.sev] > RANK[a] ? c.sev : a), 'good');
+  const VERDICT = {
+    good: ['●', 'Hệ thống ổn'], warning: ['▲', 'Có cảnh báo'],
+    serious: ['▲', 'Có sự cố'], critical: ['■', 'Cần chú ý ngay'],
+  };
+  $('verdict').innerHTML = `<span class="verdict" style="--sev: var(--${worst}); color: var(--${worst})">
+      <span class="dot"></span>${VERDICT[worst][1]}</span>`;
+
+  // ── KPI ──────────────────────────────────────────────────────────────
+  const k = DATA.kpi;
+  $('kpi').innerHTML = [
+    { hero: 1, k: 'Lỗi người dùng gặp', v: k.orphanRate + '%', d: `${nf(k.orphans)} lượt không tự cứu được` },
+    { k: 'Lượt gọi', v: nf(k.calls), d: `${DATA.daily.length} ngày có dữ liệu` },
+    { k: 'Độ trễ p95', v: ms(k.p95), d: 'trung vị ' + ms(k.p50) },
+    { k: 'Tool đã dùng', v: `${k.toolsUsed}<small>/${k.toolsTotal}</small>`, d: `${DATA.unused.length} chưa ai gọi` },
+  ].map((t) => `<div class="card kpi${t.hero ? ' hero' : ''}">
+      <div class="k">${esc(t.k)}</div><div class="v num">${t.v}</div><div class="d">${esc(t.d)}</div></div>`).join('');
+
+  // ── cột: lượt gọi theo ngày ─────────────────────────────────────────
+  (function () {
+    const d = DATA.daily;
+    if (!d.length) { $('c-daily').innerHTML = '<div class="ok-empty dim">Chưa có dữ liệu theo ngày.</div>'; return; }
+    // Ít ngày thì đừng kéo giãn hết chiều ngang — cột dày vừa phải, canh trái,
+    // tránh cảnh 3 cột lọt thỏm giữa khoảng trắng mênh mông.
+    const band = d.length < 8 ? 58 : (520 - 42) / d.length;
+    const W = Math.max(300, 42 + band * d.length + 6), H = 190, PL = 36, PR = 6, PT = 14, PB = 24;
+    const max = Math.max(1, ...d.map((x) => x.calls));
+    const step = Math.max(1, Math.pow(10, Math.floor(Math.log10(max))) / 2);
+    const top = Math.ceil(max / step) * step;
+    const bw = Math.min(26, band * 0.5);
+    const y = (v) => PT + (H - PT - PB) * (1 - v / top);
+    const cx = (i) => PL + band * (i + 0.5);
+
+    let s = '';
+    for (let t = 0; t <= top; t += step) {
+      s += `<line x1="${PL}" x2="${W - PR}" y1="${y(t)}" y2="${y(t)}" stroke="var(--grid)" stroke-width="1"/>`;
+      s += `<text x="${PL - 7}" y="${y(t) + 4}" text-anchor="end" font-size="10" fill="var(--ink-3)" class="num">${nf(t)}</text>`;
+    }
+    s += `<line x1="${PL}" x2="${W - PR}" y1="${y(0)}" y2="${y(0)}" stroke="var(--rule)" stroke-width="1"/>`;
+    d.forEach((x, i) => {
+      const x0 = cx(i) - bw / 2, yTop = y(x.calls);
+      const h = Math.max(2, y(0) - yTop);
+      // Một cột xanh = tổng lượt gọi. Đầu trên bo 4px, đáy vuông neo vào trục.
+      s += `<rect class="sg" x="${x0}" y="${yTop}" width="${bw}" height="${h}" rx="4" fill="var(--series-1)" data-i="${i}"/>`;
+      s += `<rect x="${x0}" y="${yTop + Math.max(0, h - 4)}" width="${bw}" height="4" fill="var(--series-1)"/>`;
+      s += `<text x="${cx(i)}" y="${yTop - 5}" text-anchor="middle" font-size="10.5" font-weight="600" fill="var(--ink-2)" class="num">${nf(x.calls)}</text>`;
+      s += `<text x="${cx(i)}" y="${H - 7}" text-anchor="middle" font-size="10" fill="var(--ink-3)" class="num">${day2(x.day)}</text>`;
+    });
+    $('c-daily').innerHTML = `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMinYMid meet" role="img" aria-label="Lượt gọi theo ngày" style="max-width:${W}px">${s}</svg>`;
+    $('c-daily').querySelectorAll('.sg').forEach((el) => {
+      const x = d[+el.dataset.i];
+      bindTip(el, `<b>${day2(x.day)}</b><br>${nf(x.calls)} lượt`);
+    });
+  })();
+
+  // ── thanh ngang: top tool ───────────────────────────────────────────
+  (function () {
+    const t = DATA.tools.slice(0, 10);
+    if (!t.length) { $('c-tools').innerHTML = '<div class="ok-empty dim">Chưa có tool nào được gọi.</div>'; return; }
+    const W = 520, rowH = 25, LW = 172, PR = 46, H = t.length * rowH + 4;
+    const max = Math.max(1, ...t.map((x) => x.calls));
+    const track = W - LW - PR;
+    let s = '';
+    t.forEach((x, i) => {
+      const yy = i * rowH + 4, bw = Math.max(2, (x.calls / max) * track);
+      s += `<text x="0" y="${yy + 12}" font-size="11.5" fill="var(--ink-2)" class="mono">${esc(x.name)}</text>`;
+      s += `<rect class="br" x="${LW}" y="${yy + 2}" width="${bw}" height="12" rx="4" fill="var(--series-1)" data-i="${i}"/>`;
+      s += `<rect x="${LW}" y="${yy + 2}" width="${Math.min(bw, 4)}" height="12" fill="var(--series-1)"/>`;
+      s += `<text x="${LW + bw + 7}" y="${yy + 12}" font-size="11" font-weight="600" fill="var(--ink-2)" class="num">${nf(x.calls)}</text>`;
+    });
+    $('c-tools').innerHTML = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Tool dùng nhiều nhất">${s}</svg>`;
+    $('c-tools').querySelectorAll('.br').forEach((el) => {
+      const x = t[+el.dataset.i];
+      bindTip(el, `<b>${esc(x.name)}</b><br>${nf(x.calls)} lượt · ${nf(x.errors)} lỗi (${x.errRate}%)<br>p95 ${ms(x.p95)}`);
+    });
+  })();
+
+  const count = (id, n) => { if ($(id)) $(id).textContent = n ? `· ${nf(n)}` : ''; };
+  const okEmpty = (msg) => `<tbody><tr><td><div class="ok-empty"><span class="ic">●</span>${msg}</div></td></tr></tbody>`;
+
+  // ── đang hỏng ────────────────────────────────────────────────────────
+  count('broken-n', DATA.risky.length);
+  $('t-broken').innerHTML = DATA.risky.length
+    ? '<thead><tr><th>Tool</th><th class="r">Lượt</th><th class="r">Lỗi</th><th class="r">Từ</th></tr></thead><tbody>' +
+      DATA.risky.map((t) => `<tr><td class="mono">${esc(t.name)}</td><td class="r num">${nf(t.calls)}</td>
+        <td class="r"><span class="pill sev-x" style="--sev: var(--${t.errRate >= 50 ? 'critical' : 'serious'})"><span class="dot"></span>${nf(t.errors)}</span></td>
+        <td class="r num dim">${dt(t.lastErr)}</td></tr>`).join('') + '</tbody>'
+    : okEmpty('Không có tool nào đang hỏng.');
+
+  $('healed').innerHTML = DATA.healed.length
+    ? `<p class="note">Đã chạy lại: ${DATA.healed.map((t) => `<span class="mono">${esc(t.name)}</span>`).join(', ')}</p>` : '';
+
+  // ── lỗi người dùng gặp (orphans) — lỗi KHÔNG tự cứu được ──────────────
+  count('orphan-n', DATA.orphans.length);
+  $('t-orphan').innerHTML = DATA.orphans.length
+    ? '<thead><tr><th>Lúc</th><th>Tool</th><th>Người</th><th>Thông báo</th></tr></thead><tbody>' +
+      DATA.orphans.slice(0, 40).map((o) => `<tr>
+        <td class="num dim" style="white-space:nowrap">${dt(o.at)}</td>
+        <td class="mono">${esc(o.tool)}</td>
+        <td class="dim">${esc(o.user || '—')}</td>
+        <td class="dim">${esc(o.msg) || '—'}</td></tr>`).join('') + '</tbody>'
+    : okEmpty('Không có lỗi nào lọt tới người dùng.');
+
+  // ── mã lỗi ───────────────────────────────────────────────────────────
+  // Chỉ giữ lỗi ĐÁNG theo dõi: bỏ "Thiếu quyền" (tool vẫn chạy, người dùng chỉ
+  // thiếu quyền) và lỗi lẻ 1 lần không nghiêm trọng. Giữ mọi lỗi critical (nghi
+  // đổi API) và lỗi lặp lại từ 2 lần. Đây là thứ làm bảng "nhìn đầy lỗi" trong
+  // khi luồng vẫn chạy — lọc đi để dễ theo dõi thứ thật sự hỏng.
+  const codes = DATA.codes.filter((c) => c.sev !== 'warning' && (c.sev === 'critical' || c.hits >= 2));
+  count('codes-n', codes.length);
+  $('t-codes').innerHTML = codes.length
+    ? '<thead><tr><th>Mã</th><th class="r">Lượt</th><th>Phân loại</th><th>Tool</th><th>Thông báo</th></tr></thead><tbody>' +
+      codes.map((c) => `<tr><td class="mono">${esc(c.code)}</td><td class="r num">${nf(c.hits)}</td>
+        <td><span class="pill sev-x" style="--sev: var(--${c.sev})"><span class="dot"></span>${esc(c.label)}</span></td>
+        <td class="mono dim">${c.tools.slice(0, 2).map(esc).join('<br>')}${c.tools.length > 2 ? `<br>+${c.tools.length - 2}` : ''}</td>
+        <td class="dim">${esc(c.sample) || '—'}</td></tr>`).join('') + '</tbody>'
+    : okEmpty('Không có lỗi đáng theo dõi.');
+
+  // ── người dùng ───────────────────────────────────────────────────────
+  count('users-n', DATA.users.length);
+  $('t-users').innerHTML =
+    '<thead><tr><th>Người</th><th class="r">Lượt</th><th class="r">Lỗi</th><th class="r">Tool</th><th class="r">Gần nhất</th></tr></thead><tbody>' +
+    DATA.users.map((u) => `<tr><td>${esc(u.name)}</td><td class="r num">${nf(u.calls)}</td>
+      <td class="r num">${nf(u.errors)}</td><td class="r num">${nf(u.tools)}</td>
+      <td class="r num dim" style="white-space:nowrap">${dt(u.last)}</td></tr>`).join('') + '</tbody>';
+
+  // ── chỗ cắm ──────────────────────────────────────────────────────────
+  count('conn-n', DATA.connectors.length);
+  $('t-conn').innerHTML =
+    '<thead><tr><th>Người</th><th>Nối bằng</th><th class="r">Lượt</th><th class="r">Gần nhất</th><th>Trạng thái</th></tr></thead><tbody>' +
+    DATA.connectors.map((c) => `<tr>
+      <td>${esc(c.user || '—')}</td>
+      <td>${esc(c.app || '—')} <span class="mono dim" style="font-size:11px">${esc(c.clientId)}</span></td>
+      <td class="r num">${nf(c.calls)}</td>
+      <td class="r num dim" style="white-space:nowrap">${dt(c.last)}</td>
+      <td><span class="pill sev-x" style="--sev: var(--${c.status === 'active' ? 'good' : 'critical'})"><span class="dot"></span>${esc(c.status)}</span></td>
+    </tr>`).join('') + '</tbody>';
+
+  // ── tool chưa dùng ───────────────────────────────────────────────────
+  count('unused-n', DATA.unused.length);
+  $('unused').innerHTML = DATA.unused.length
+    ? DATA.unused.map((n) => `<span class="tag mono">${esc(n)}</span>`).join('')
+    : '<div class="ok-empty"><span class="ic">●</span>Mọi tool đều đã có người gọi.</div>';
+
+  if (DATA.kpi.toolsRetired.length) {
+    $('foot').innerHTML = `Log còn ${DATA.kpi.toolsRetired.length} tool đã gỡ: <span class="mono">${DATA.kpi.toolsRetired.map(esc).join(', ')}</span>`;
+  } else {
+    $('foot').remove();
+  }
+</script>
