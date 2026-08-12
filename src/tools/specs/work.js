@@ -49,11 +49,30 @@ export default [
     name: 'task_complete',
     desc: '[TASK] Đánh dấu task đã hoàn thành.',
     schema: { task_guid: z.string() },
-    handler: async (a, api) =>
-      api.patch(`/open-apis/task/v2/tasks/${encodeURIComponent(a.task_guid)}`, {
-        params: { update_fields: 'completed_at' },
-        body: { task: { completed_at: String(Date.now()) } },
-      }),
+    /**
+     * `update_fields` nằm trong BODY và là MẢNG. Bản đầu gửi nó ở query dạng
+     * chuỗi và ăn `99992402 field validation failed` cả 3/3 lượt — đúng cái bẫy
+     * ngược với `approval_search` (ở đó `page_size` phải ra query).
+     *
+     * Hình dạng đúng lấy từ chính audit: khi tool này hỏng, Claude vòng qua
+     * `lark_api_call` với body dưới đây và thành công ngay. Không ai báo lỗi vì
+     * cửa thoát hiểm đã che mất — xem ghi chú ở lark_api_call.
+     */
+    handler: async (a, api) => {
+      try {
+        return await api.patch(`/open-apis/task/v2/tasks/${encodeURIComponent(a.task_guid)}`, {
+          body: { task: { completed_at: String(Date.now()) }, update_fields: ['completed_at'] },
+        });
+      } catch (e) {
+        // Đánh dấu xong một việc đã xong là không có gì để làm, không phải lỗi.
+        // Bắt HẸP theo đúng câu Lark trả về chứ không theo mã 1470400 — mã đó là
+        // "Invalid Param" chung, nuốt cả mã thì che luôn tham số sai thật.
+        if (/completed_at.*completed task/i.test(e.message)) {
+          return { code: 0, already_completed: true, task_guid: a.task_guid };
+        }
+        throw e;
+      }
+    },
   },
   {
     name: 'tasklist_create',
@@ -164,9 +183,13 @@ export default [
   // ── Minutes ───────────────────────────────────────────────────────────
   // Transcript nằm ở `/minutes/{token}/artifacts` (một chuỗi thẳng, kèm
   // keywords), metadata ở `/minutes/{token}`. KHÔNG có endpoint `/blocks` —
-  // bản đầu gọi vào đó và ăn 404 non-JSON, tức minutes_transcript và
-  // lark_meeting_note CHƯA BAO GIỜ chạy được: audit_logs ghi 5/5 lần gọi đều
-  // lỗi từ 10/08. Canary chỉ gọi tool đọc thuộc nhóm khác nên không chạm tới.
+  // bản đầu gọi vào đó và ăn 404 non-JSON, hỏng liên tục từ 10/08 tới khi sửa
+  // ở f21c5fc. Canary chỉ gọi tool đọc thuộc nhóm khác nên không chạm tới:
+  // lỗi này do người dùng đâm vào trước, không phải do bộ phát hiện tìm ra.
+  //
+  // Chỉ còn ba tool, mỗi cái một việc. `lark_meeting_note` gộp cả ba lại thành
+  // một lượt gọi đã bị bỏ: cùng độ phủ mà thêm một đường code phải nuôi, và nó
+  // là tool duy nhất cần `plainTitle` để vá cái `display_info` dính thẻ <h>.
   {
     name: 'minutes_search',
     desc: '[MINUTES] Tìm biên bản họp.',
@@ -200,63 +223,6 @@ export default [
     schema: { minute_token: z.string() },
     handler: async (a, api) =>
       api.get(`/open-apis/minutes/v1/minutes/${encodeURIComponent(a.minute_token)}/media`),
-  },
-  {
-    name: 'lark_meeting_note',
-    desc:
-      '[MINUTES] Lấy biên bản một cuộc họp: tìm theo từ khoá hoặc nhận thẳng token/URL, ' +
-      'rồi trả về toàn văn transcript kèm thông tin cuộc họp. Nguồn duy nhất là Lark Minutes.',
-    schema: {
-      query: z.string().optional().describe('Từ khoá tên cuộc họp; bỏ trống nếu đã có minute_token'),
-      minute_token: z.string().optional().describe('Token hoặc URL Minutes'),
-      max_chars: z.number().int().optional().describe('Cắt bớt transcript nếu quá dài'),
-    },
-    handler: async (a, api) => {
-      // Bản zip tải video về máy rồi đẩy sang Whisper server. Bản này không:
-      // Lark Minutes đã có sẵn transcript do chính Lark tạo, chính xác hơn và
-      // không cần hạ tầng ngoài. Ai cần Whisper thì vẫn dùng bản zip.
-      let token = a.minute_token ? extractMinuteToken(a.minute_token) : null;
-      let meta = null;
-
-      if (!token) {
-        if (!a.query) throw new Error('Cần query hoặc minute_token.');
-        const found = await api.post('/open-apis/minutes/v1/minutes/search', { body: { query: a.query } });
-        const items = found.data?.items || [];
-        if (!items.length) throw new Error(`Không tìm thấy biên bản nào khớp "${a.query}".`);
-        meta = items[0];
-        token = meta.minute_token || meta.token;
-        if (items.length > 1) {
-          meta.other_matches = items.slice(1, 6).map((m) => ({
-            title: plainTitle(m),
-            token: m.minute_token || m.token,
-          }));
-        }
-      }
-
-      // Kết quả search KHÔNG có `title`, chỉ có `display_info` kèm thẻ <h> đánh
-      // dấu từ khoá khớp — không dùng làm tiêu đề được. Hỏi metadata riêng, và
-      // GỘP vào chứ không ghi đè: `other_matches` chỉ có ở kết quả search.
-      if (!meta?.title) {
-        try {
-          const info = await api.get(`/open-apis/minutes/v1/minutes/${encodeURIComponent(token)}`);
-          meta = { ...(meta || {}), ...(info.data?.minute || {}) };
-        } catch {
-          // Thiếu quyền đọc metadata không được cản việc lấy transcript — giữ
-          // những gì search đã trả, chỉ dựng lại tiêu đề từ display_info.
-          if (meta) meta.title = plainTitle(meta);
-        }
-      }
-
-      const r = await api.get(`/open-apis/minutes/v1/minutes/${encodeURIComponent(token)}/artifacts`);
-
-      return {
-        minute_token: token,
-        title: meta?.title,
-        meeting: meta,
-        keywords: r.data?.keywords || [],
-        ...cutTranscript(api, token, r.data?.transcript || '', a.max_chars),
-      };
-    },
   },
 
   // ── VC / OKR ──────────────────────────────────────────────────────────
@@ -296,24 +262,6 @@ export default [
   },
 ];
 
-/** Nhận cả URL Minutes lẫn token trần. */
-/**
- * Tiêu đề từ một kết quả minutes_search. Search chỉ trả `display_info`, trong đó
- * từ khoá khớp bị bọc thẻ <h>…</h> và phía sau còn dính Keywords/Owner/Duration.
- * Lấy dòng đầu, bỏ thẻ, giải mã vài entity HTML mà Lark chèn vào.
- */
-function plainTitle(m) {
-  if (m?.title) return m.title;
-  const first = String(m?.display_info || '').split('\n')[0];
-  return first
-    .replace(/<\/?[a-z]+>/gi, '')
-    .replace(/&amp;/g, '&')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&quot;/g, '"')
-    .trim();
-}
-
 function cutTranscript(api, token, transcript, maxChars) {
   const limit = maxChars || TRANSCRIPT_INLINE_MAX;
   const chars = transcript.length;
@@ -326,6 +274,7 @@ function cutTranscript(api, token, transcript, maxChars) {
   };
 }
 
+/** Nhận cả URL Minutes lẫn token trần. */
 function extractMinuteToken(input) {
   const m = String(input).match(/\/minutes\/([A-Za-z0-9]+)/);
   return m ? m[1] : String(input).trim();

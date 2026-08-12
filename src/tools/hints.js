@@ -45,7 +45,6 @@ export const READ_ONLY = new Set([
   'minutes_search',
   'minutes_transcript',
   'minutes_media_link',
-  'lark_meeting_note',
   'okr_cycle_list',
   'vc_search',
 ]);

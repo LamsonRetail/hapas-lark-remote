@@ -59,10 +59,10 @@ export default [
   },
   {
     name: 'docx_document_raw_content',
-    desc: '[DOCX] Đọc toàn bộ nội dung văn bản của một tài liệu Docs.',
-    schema: { document_id: z.string().describe('ID tài liệu (token trên URL)') },
-    method: 'POST',
-    path: '/open-apis/docs_ai/v1/documents/{document_id}/fetch',
+    desc: '[DOCX] Đọc toàn bộ nội dung văn bản của một tài liệu Docs. Nhận cả URL (kể cả link Wiki) lẫn token.',
+    schema: { document_id: z.string().describe('Token tài liệu hoặc URL — link Wiki cũng được') },
+    handler: async (a, api) =>
+      api.post(`/open-apis/docs_ai/v1/documents/${encodeURIComponent(await docToken(api, a.document_id))}/fetch`, {}),
   },
   {
     name: 'docx_block_append',
@@ -79,9 +79,10 @@ export default [
      * đọc tài liệu để biết block cuối là gì rồi chèn sau nó.
      */
     handler: async (a, api) => {
-      const doc = encodeURIComponent(a.document_id);
+      const token = await docToken(api, a.document_id);
+      const doc = encodeURIComponent(token);
       const r = await api.post(`/open-apis/docs_ai/v1/documents/${doc}/fetch`, {});
-      const blockId = lastTopLevelBlockId(r.data?.document?.content || '', a.document_id);
+      const blockId = lastTopLevelBlockId(r.data?.document?.content || '', token);
       return api.put(`/open-apis/docs_ai/v1/documents/${doc}`, {
         body: { command: 'block_insert_after', block_id: blockId, content: a.content, doc_format: 'markdown' },
       });
@@ -92,7 +93,7 @@ export default [
     desc: '[DOCS] Đếm số từ và số ký tự của tài liệu Docx. Tính theo từ với tiếng Việt, theo ký tự với CJK.',
     schema: { doc: z.string().describe('URL hoặc token tài liệu Docx') },
     handler: async (a, api) => {
-      const token = extractToken(a.doc);
+      const token = (await docToken(api, a.doc));
       const r = await api.post(`/open-apis/docs_ai/v1/documents/${encodeURIComponent(token)}/fetch`, {});
       const text = collectText(r.data);
       // CJK đếm theo ký tự vì không có dấu cách giữa từ; phần còn lại đếm theo từ.
@@ -106,7 +107,7 @@ export default [
     desc: '[DOCS] Xem lịch sử phiên bản tài liệu. Trả về history_version_id để dùng cho docs_history_revert.',
     schema: { doc: z.string(), page_size: z.number().int().optional(), page_token: z.string().optional() },
     handler: async (a, api) =>
-      api.get(`/open-apis/docs_ai/v1/documents/${encodeURIComponent(extractToken(a.doc))}/histories`, {
+      api.get(`/open-apis/docs_ai/v1/documents/${encodeURIComponent((await docToken(api, a.doc)))}/histories`, {
         params: { page_size: a.page_size, page_token: a.page_token },
       }),
   },
@@ -121,7 +122,7 @@ export default [
       wait_timeout_ms: z.number().optional(),
     },
     handler: async (a, api) =>
-      api.post(`/open-apis/docs_ai/v1/documents/${encodeURIComponent(extractToken(a.doc))}/history/revert`, {
+      api.post(`/open-apis/docs_ai/v1/documents/${encodeURIComponent((await docToken(api, a.doc)))}/history/revert`, {
         body: { history_version_id: a.history_version_id, wait_timeout_ms: a.wait_timeout_ms ?? 0 },
       }),
   },
@@ -130,7 +131,7 @@ export default [
     desc: '[DOCS] Kiểm tra trạng thái tác vụ khôi phục: running | done | partial_failed | failed.',
     schema: { doc: z.string(), task_id: z.string() },
     handler: async (a, api) =>
-      api.get(`/open-apis/docs_ai/v1/documents/${encodeURIComponent(extractToken(a.doc))}/history/revert_status`, {
+      api.get(`/open-apis/docs_ai/v1/documents/${encodeURIComponent((await docToken(api, a.doc)))}/history/revert_status`, {
         params: { task_id: a.task_id },
       }),
   },
@@ -192,6 +193,32 @@ function extractToken(input) {
   if (!input) throw new Error('Thiếu doc');
   const m = String(input).match(/\/(?:docx|docs|wiki|sheets|base)\/([A-Za-z0-9]+)/);
   return m ? m[1] : String(input).trim();
+}
+
+/**
+ * Token tài liệu THẬT.
+ *
+ * URL Wiki không chứa token tài liệu mà chứa token NODE — nhét thẳng vào
+ * `/documents/{id}` thì Lark trả trang HTML 404, tức lỗi `non_json` chứ không
+ * phải một mã lỗi đọc được. Phải hỏi Lark node đó đang bọc object nào.
+ *
+ * Đã xảy ra thật: 12/08 một lượt `docx_document_raw_content` nhận link `/wiki/`
+ * và chết đúng kiểu đó — lỗi DUY NHẤT trong 14 ngày mà người dùng không có
+ * đường vòng nào để thoát.
+ *
+ * `base_url_resolve` gỡ y hệt cái bẫy này cho Bitable.
+ */
+async function docToken(api, input) {
+  const raw = extractToken(input);
+  if (!/\/wiki\//.test(String(input))) return raw;
+  try {
+    const n = await api.get('/open-apis/wiki/v2/spaces/get_node', { params: { token: raw } });
+    return n.data?.node?.obj_token || raw;
+  } catch {
+    // Thiếu quyền đọc Wiki thì cứ thử token thô — lỗi sau đó nói rõ hơn là
+    // nuốt mất và báo một câu chung chung ở đây.
+    return raw;
+  }
 }
 
 function collectText(node, out = []) {

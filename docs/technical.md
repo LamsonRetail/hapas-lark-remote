@@ -135,10 +135,12 @@ hapas-lark-remote/
 │  ├─ lark.js             larkApi/fetchRetry, stripInstructions, bot token
 │  ├─ store.js            token store mã hoá + withUserLock  ← đổi sang DB thì sửa ở đây
 │  ├─ supabase.js         URL + service key + sbFetch, dùng chung
-│  ├─ audit.js            gom lô, bắn nền, tự bỏ cột schema chưa có
+│  ├─ audit.js            gom lô, bắn nền, tự bỏ cột schema chưa có + auditAuth
 │  ├─ machines.js         ghi danh tính người dùng remote vào bảng machines
 │  ├─ canary.js           9 probe đọc + 3 probe ghi mỗi giờ, DM khi hỏng
 │  ├─ canary-write.js     probe ghi: ghi → đọc lại đối chiếu → dọn sạch
+│  ├─ keepalive.js        xoay token 12h/lượt để phiên Lark không rụng sau 7 ngày
+│  ├─ notify.js           DM cảnh báo cho quản trị, dùng chung canary + keepalive
 │  ├─ files.js            tool xuất file → trả link tải, không phải đường dẫn ổ đĩa
 │  ├─ config.js           đọc .env, chọn host theo LARK_DOMAIN, version từ package.json
 │  └─ tools/
@@ -242,6 +244,43 @@ group by 1, 2 order by 3 desc;
 
 `99991663` là user thiếu quyền — chuyện thường ngày. **404 hoặc lỗi tham số** mới là dấu hiệu Lark đổi API.
 
+### Keepalive
+
+Refresh token của Lark là **cửa sổ trượt**: mỗi lần xoay, Lark cấp phiếu mới với hạn 7 ngày trọn vẹn. Đo trên dữ liệu thật (`refreshExpiresAt` luôn cách `updatedAt` đúng 168h, kể cả ở tài khoản đã xoay token hàng chục lần) chứ không đoán theo tài liệu. Nên chỉ cần chạm vào một lần trong 7 ngày là phiên sống mãi.
+
+[keepalive.js](../src/keepalive.js) làm đúng việc đó cho **mọi** người, mỗi 12 tiếng, một request tới token endpoint cho mỗi người. Trước đó chỉ tài khoản `CANARY_OPEN_ID` được hưởng, và là do vô tình.
+
+> **Đây là đánh đổi, không phải sửa lỗi.** Hết hạn sau 7 ngày im lặng vốn là một cơ chế thu hồi tự nhiên — ai nghỉ việc thì quyền tự rụng mà không cần ai nhớ. Bật keepalive nghĩa là phiên sống tới khi có người **chủ động** thu hồi, nên `npm run revoke` chuyển từ "nên làm" thành **bắt buộc** trong quy trình offboarding.
+
+Không gọi API nghiệp vụ nào. Ghi đúng một dòng `__auth.keepalive` mỗi ngày (cộng dòng khi có chuyển trạng thái) — đó cũng là chỗ **duy nhất** dashboard nhìn thấy được hạn refresh token, vì dữ liệu đó nằm trong `tokens.json` mã hoá trên máy chủ. Người vừa mất phiên thì DM cho quản trị, đúng một lần.
+
+Đã quá hạn thì **không gọi API**: chắc chắn hỏng, và mỗi lượt gọi lại đẻ thêm một dòng cho một sự thật đã biết. Lark từ chối trong khi đồng hồ ta vẫn thấy còn hạn (admin gỡ app, đổi mật khẩu) thì thử tối đa 3 lượt trên cùng một bản ghi; người đó đăng nhập lại thì `updatedAt` đổi và bộ đếm tự về 0.
+
+`npm run keepalive` để chạy tay một lượt sau đợt tắt dài. `KEEPALIVE_EVERY_HOURS=0` để tắt.
+
+### Sự kiện xác thực và rollup
+
+`machines` chỉ giữ **trạng thái hiện tại** — `last_seen` bị ghi đè nên không còn dấu vết sự kiện. Không bảng nào trả lời được "tuần này bao nhiêu người phải đăng nhập lại". [auditAuth()](../src/audit.js) ghi sự kiện vào chính `audit_logs` với `tool_name` mang tiền tố `__auth.`:
+
+| Sự kiện | Khi nào |
+|---|---|
+| `lark_login` | Device flow xong, đã lưu token Lark |
+| `reauth_required` | Mọi lần `getValidAccessToken` bó tay — lý do nằm ở `error_msg` |
+| `login` / `refresh` / `revoke` | Vòng đời bearer phía Claude |
+| `grant_denied` | `/token` từ chối — dấu hiệu client đang **kẹt** trong vòng lặp refresh |
+| `denied` | 401 ở `/mcp`, tiết chế 1 dòng/phút vì URL công khai có bot quét |
+| `keepalive` | Nhịp tim mỗi ngày, kèm hạn refresh của từng người |
+
+Refresh **thành công** thì không ghi: mỗi 2 tiếng một lượt cho mỗi người đang hoạt động, ghi hết là ~70 dòng/ngày toàn "vẫn ổn" — đúng cái bệnh đã phải sửa ở canary.
+
+> **Điểm mù còn lại:** bảng audit chỉ thấy những gì **đã qua** được cửa xác thực. `denied` vá được phần lớn, nhưng lúc hỏng nặng nhất — không ai nối vào được — im lặng và khoẻ mạnh vẫn trông khá giống nhau. Nhịp tim của canary và keepalive là thứ phân biệt hai trạng thái đó.
+
+[supabase/rollup.sql](../supabase/rollup.sql) gom `audit_logs` thành `audit_daily` + `audit_daily_errors` mỗi đêm bằng pg_cron, **giữ mãi mãi**. Job dọn 90 ngày xoá dữ liệu thô, nên không có rollup thì mọi biểu đồ dài hơn 3 tháng tự rỗng dần mà không báo gì. Job gom lại **3 ngày** mỗi đêm để bỏ lỡ một đêm thì đêm sau tự vá.
+
+Ngày tính theo **giờ Việt Nam**, không phải UTC: pg_cron chạy theo UTC, để nguyên thì "hôm nay" trên dashboard lệch 7 tiếng so với "hôm nay" của người đọc — số vẫn đúng nhưng luôn trả lời sai câu hỏi được hỏi.
+
+Luật lọc (`source='url'`, bỏ `canary` và `local-admin`) đóng vào view `v_daily_tools` / `v_daily_auth` / `v_session_health` thay vì nhắc nhau nhớ — quên một lần là mọi con số sai một cách trông rất hợp lý.
+
 ### Thu hồi truy cập
 
 | Ai | Cách |
@@ -265,6 +304,8 @@ Cả hai đường cùng ngữ nghĩa: bỏ hết bearer của chỗ cắm → `
 | `LARK_APP_ID` / `LARK_APP_SECRET` | App Lark. Secret phải nằm trong **body**; Basic auth bị từ chối (`20140 invalid_client`) |
 | `LARK_SCOPES` | Full scope của app, **bắt buộc có `offline_access`** — thiếu nó vẫn có access_token nhưng không có refresh_token, 2 tiếng sau phải đăng nhập lại. Xin scope app không có thì Lark **không báo lỗi**, chỉ âm thầm cấp ít hơn (xin 180 nhận 175) — muốn biết thực cấp gì thì đọc trường `scope` của token |
 | `TOKEN_ENC_KEY` | 32 byte hex. Đổi khoá = mọi người phải đăng nhập lại |
+| `KEEPALIVE_EVERY_HOURS` | Nhịp giữ phiên Lark, mặc định `12`. `0` để tắt — tắt thì ai nghỉ quá 7 ngày phải quét mã lại |
+| `ALERT_OPEN_ID` | Nơi nhận DM cảnh báo của canary **và** keepalive. Thiếu thì lùi về `CANARY_ALERT_OPEN_ID` rồi `CANARY_OPEN_ID` |
 | `TUNNEL` | `tailscale` hoặc `cloudflare`. Xem README |
 | `PUBLIC_URL` | Supervisor tự ghi đè khi dựng tunnel; server đọc lúc khởi động để phát OAuth metadata |
 | `CANARY_OPEN_ID` | Chạy canary dưới danh nghĩa user này — phải là người đã đăng nhập |
@@ -285,7 +326,7 @@ Sáu tool gọi sai API mà **không ai biết**, vì tất cả đều trả l�
 | `docx_block_append` | `command: 'append'` — Lark đã **bỏ** command này | đọc doc, tìm block cấp cao nhất cuối, `block_insert_after` |
 | `sheets_table_put` / `_get` | gửi thẳng `{sheets:[…]}` vào `invoke_write` | `{tool_name, input}` với `input` là **chuỗi JSON**; đổi giao thức có kiểu → ma trận ô là việc của client |
 | `base_record_create` (+`batch`) | `{records:[{fields:{…}}]}` của bitable v1 | Base v3 dùng dạng **cột**: `{fields:[tên], rows:[[giá trị]]}` |
-| `minutes_transcript`, `lark_meeting_note` | `/minutes/{token}/blocks` — endpoint **không tồn tại** | `/minutes/{token}` (meta) + `/minutes/{token}/artifacts` (transcript, chuỗi thẳng) |
+| `minutes_transcript` (và `lark_meeting_note`, nay đã bỏ) | `/minutes/{token}/blocks` — endpoint **không tồn tại** | `/minutes/{token}` (meta) + `/minutes/{token}/artifacts` (transcript, chuỗi thẳng) |
 | `approval_search` | `page_size` trong body → Lark **bỏ qua**, luôn trả 10 | `page_size` ở query, và Lark từ chối dưới 5 |
 | `base_record_list` | schema cho `limit` tới 500 | Lark chặn trên 200 |
 

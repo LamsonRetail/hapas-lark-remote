@@ -5,7 +5,7 @@ import { TOOLS } from './tools/index.js';
 import { apiFor, execSpec } from './tools/registry.js';
 import { getValidAccessToken } from './lark-auth.js';
 import { auditToolCall } from './audit.js';
-import { getBotToken, larkApi } from './lark.js';
+import { dmAdmin as dm, alertTarget } from './notify.js';
 import { writeProbes, writeEnabled } from './canary-write.js';
 
 /**
@@ -24,7 +24,6 @@ import { writeProbes, writeEnabled } from './canary-write.js';
 
 const EVERY_MIN = Number(process.env.CANARY_EVERY_MIN ?? 60);
 const OPEN_ID = (process.env.CANARY_OPEN_ID || '').trim();
-const ALERT_TO = (process.env.CANARY_ALERT_OPEN_ID || OPEN_ID).trim();
 const STATE_FILE = path.join(config.dataDir, 'canary.json');
 
 /** Hỏng bao nhiêu lần liên tiếp mới báo. Một lần có thể chỉ là nghẽn mạng. */
@@ -63,20 +62,6 @@ const saveState = (s) => {
     console.error('[canary] không ghi được state:', e.message);
   }
 };
-
-/** DM as bot. Hỏng thì kệ — cảnh báo chết không được phép làm chết canary. */
-async function dm(text) {
-  if (!ALERT_TO) return;
-  try {
-    await larkApi('POST', '/open-apis/im/v1/messages', {
-      params: { receive_id_type: 'open_id' },
-      body: { receive_id: ALERT_TO, msg_type: 'text', content: JSON.stringify({ text }) },
-      token: await getBotToken(),
-    });
-  } catch (e) {
-    console.error('[canary] không gửi được cảnh báo:', e.message);
-  }
-}
 
 /** Gộp probe đọc và ghi về cùng một dạng `{ name, args, run }`. */
 async function allProbes(api, state) {
@@ -221,7 +206,7 @@ export function startCanary() {
 
   const perDay = (24 * 60) / EVERY_MIN;
   console.log(
-    `  canary : ~${perDay.toFixed(1)} lượt/ngày (${EVERY_MIN} phút ±${JITTER * 100}%), DM tới ${ALERT_TO.slice(0, 12)}…` +
+    `  canary : ~${perDay.toFixed(1)} lượt/ngày (${EVERY_MIN} phút ±${JITTER * 100}%), DM tới ${alertTarget().slice(0, 12)}…` +
       (writeEnabled ? ' (có probe ghi)' : ' (chỉ đọc — CANARY_WRITE=0)'),
   );
 

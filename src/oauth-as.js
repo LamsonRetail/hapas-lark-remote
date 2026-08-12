@@ -4,8 +4,9 @@ import path from 'node:path';
 import express from 'express';
 import { config } from './config.js';
 import { startDeviceFlow, pollDeviceFlow, persistTokens } from './lark-auth.js';
-import { deleteUser } from './store.js';
+import { deleteUser, getUser } from './store.js';
 import { recordAuth, revokeMachines } from './machines.js';
+import { auditAuth } from './audit.js';
 
 /**
  * OAuth 2.1 Authorization Server cho MCP.
@@ -31,10 +32,33 @@ const hashToken = (t) => b64url(sha256(t)); // chỉ lưu hash, lộ file không
 const flows = new Map(); // state đang chờ user duyệt trên Lark
 const codes = new Map(); // authorization code, dùng một lần
 
+/**
+ * Token hết hạn chỉ bị resolveBearer BỎ QUA chứ không xoá khỏi đĩa. Không dọn
+ * thì oauth.json phình đơn điệu — mỗi lần refresh thêm một cặp token mới, cái cũ
+ * (access 30 ngày, refresh 180 ngày) nằm lại mãi — mà cả file bị parse lại ở
+ * mỗi request /mcp. Chỉ ghi lại khi THẬT SỰ có entry bị xoá, tránh viết đĩa mỗi
+ * phút vô ích. Toàn bộ đồng bộ (không await giữa load↔save) nên vẫn nguyên tử.
+ */
+function pruneExpiredTokens(now = Date.now()) {
+  const db = load();
+  let removed = 0;
+  for (const [hash, t] of Object.entries(db.tokens)) {
+    if (t.expiresAt < now) {
+      delete db.tokens[hash];
+      removed++;
+    }
+  }
+  if (removed) {
+    save(db);
+    console.log(`[oauth] dọn ${removed} token hết hạn`);
+  }
+}
+
 setInterval(() => {
   const now = Date.now();
   for (const [k, v] of flows) if (v.expiresAt < now) flows.delete(k);
   for (const [k, v] of codes) if (v.expiresAt < now) codes.delete(k);
+  pruneExpiredTokens(now);
 }, 60_000).unref();
 
 /**
@@ -54,6 +78,50 @@ const appNameOf = (db, clientId) => {
   const m = /^static-(.+)$/.exec(clientId || '');
   return m ? `static: ${m[1]}` : null;
 };
+
+/**
+ * Bỏ mọi bearer của một grant, đánh dấu machines, và xoá token Lark nếu đó là
+ * chỗ cắm cuối cùng của người đó.
+ *
+ * Dùng chung bởi `/revoke` (RFC 7009, người dùng tự ngắt bằng bearer của mình)
+ * và `revoke.js` (quản trị chạy tại chỗ). Hai đường phải có ngữ nghĩa GIỐNG HỆT
+ * nhau — viết hai bản là sớm muộn một bên quên xoá token Lark rồi tưởng đã thu
+ * hồi xong, mà đó là bên nguy hiểm nhất để sai.
+ *
+ * `clientId` bỏ trống nghĩa là thu hồi TẤT CẢ chỗ cắm của người đó.
+ */
+export function revokeGrant({ openId, clientId = null, name = '' }) {
+  const db = load();
+  const revoked = [];
+  for (const [hash, t] of Object.entries(db.tokens)) {
+    if (t.openId !== openId) continue;
+    if (clientId && t.clientId !== clientId) continue;
+    revoked.push(t.kind);
+    delete db.tokens[hash];
+  }
+
+  const clientsLeft = new Set(Object.values(db.tokens).filter((t) => t.openId === openId).map((t) => t.clientId));
+  save(db);
+
+  revokeMachines({ openId, clientIds: clientId ? [clientId] : [] });
+
+  // Báo cáo đúng thứ ĐÃ xảy ra, không phải thứ lẽ ra xảy ra: open_id gõ sai thì
+  // clientsLeft cũng bằng 0, và nếu cứ thế báo "đã xoá token Lark" thì dashboard
+  // hiện một thao tác thành công cho một người không tồn tại.
+  const hadLarkToken = Boolean(getUser(openId));
+  if (clientsLeft.size === 0 && hadLarkToken) deleteUser(openId);
+
+  console.log(
+    `[revoke] ${name || openId} / ${clientId || 'MỌI chỗ cắm'} — bỏ ${revoked.length} token` +
+      (clientsLeft.size === 0 && hadLarkToken ? ', hết chỗ cắm nên xoá luôn token Lark' : `, còn ${clientsLeft.size} chỗ cắm`),
+  );
+  return {
+    tokens: revoked.length,
+    clientsLeft: clientsLeft.size,
+    larkTokenDeleted: clientsLeft.size === 0 && hadLarkToken,
+    found: revoked.length > 0 || hadLarkToken,
+  };
+}
 
 export function resolveBearer(token) {
   if (!token) return null;
@@ -133,12 +201,29 @@ export function buildOAuthRouter() {
       return res.status(400).json({ error: 'invalid_redirect_uri', error_description: 'redirect_uris bắt buộc' });
     }
     const db = load();
-    const clientId = rand(16);
-    db.clients[clientId] = { clientId, redirectUris: redirect_uris, name: client_name || 'MCP client', createdAt: Date.now() };
-    save(db);
+    const name = client_name || 'MCP client';
+
+    // Dedup: cùng client_name + cùng TẬP redirect_uris thì tái dùng client_id cũ
+    // thay vì đúc mới. Không có bước này thì mỗi lần Claude đăng ký lại connector
+    // là một client_id mới → machine_id mới (machine_id = hash(open_id|client_id))
+    // → một dòng 'url-*' trùng người trong bảng machines.
+    //
+    // client_id là định danh ỨNG DỤNG, không bí mật (public client + PKCE), nên
+    // nhiều người cùng dùng "Claude" CHIA SẺ một client_id là đúng chuẩn OAuth —
+    // machine_id vẫn tách theo open_id nên mỗi người vẫn một dòng riêng.
+    const sameSet = (a, b) =>
+      Array.isArray(a) && a.length === b.length && [...a].sort().join('\n') === [...b].sort().join('\n');
+    const existing = Object.values(db.clients).find((c) => c.name === name && sameSet(c.redirectUris, redirect_uris));
+
+    const clientId = existing?.clientId || rand(16);
+    if (!existing) {
+      db.clients[clientId] = { clientId, redirectUris: redirect_uris, name, createdAt: Date.now() };
+      save(db);
+    }
+
     res.status(201).json({
       client_id: clientId,
-      client_name: client_name || 'MCP client',
+      client_name: name,
       redirect_uris,
       token_endpoint_auth_method: 'none',
       grant_types: ['authorization_code', 'refresh_token'],
@@ -250,27 +335,48 @@ export function buildOAuthRouter() {
   r.post('/token', express.urlencoded({ extended: true }), express.json(), (req, res) => {
     const b = { ...req.body, ...req.query };
 
+    /**
+     * Grant bị từ chối là dấu hiệu client đang KẸT — Claude thử refresh bằng
+     * token đã chết sẽ lặp lại mãi và người dùng chỉ thấy "connector lỗi".
+     * Không ghi lại thì cả sự cố đó vô hình với dashboard, vì chưa có tool call
+     * nào để mà xuất hiện trong audit.
+     */
+    const deny = (why, extra = {}) => {
+      auditAuth({
+        event: 'grant_denied',
+        clientId: b.client_id || null,
+        ok: false,
+        errorMsg: why,
+        detail: { grant_type: b.grant_type || null, ...extra },
+      });
+      return res.status(400).json({ error: 'invalid_grant', error_description: why });
+    };
+
     if (b.grant_type === 'authorization_code') {
       const c = codes.get(b.code);
-      if (!c || c.expiresAt < Date.now()) return res.status(400).json({ error: 'invalid_grant' });
+      if (!c || c.expiresAt < Date.now()) return deny('code không hợp lệ hoặc đã hết hạn');
       codes.delete(b.code); // dùng một lần
-      if (c.clientId !== b.client_id) return res.status(400).json({ error: 'invalid_grant', error_description: 'client_id lệch' });
-      if (c.redirectUri !== b.redirect_uri) return res.status(400).json({ error: 'invalid_grant', error_description: 'redirect_uri lệch' });
-      if (b64url(sha256(b.code_verifier || '')) !== c.codeChallenge) {
-        return res.status(400).json({ error: 'invalid_grant', error_description: 'PKCE không khớp' });
-      }
+      if (c.clientId !== b.client_id) return deny('client_id lệch');
+      if (c.redirectUri !== b.redirect_uri) return deny('redirect_uri lệch');
+      if (b64url(sha256(b.code_verifier || '')) !== c.codeChallenge) return deny('PKCE không khớp');
+
+      auditAuth({ event: 'login', openId: c.openId, userName: c.name, clientId: c.clientId });
       return res.json(issueTokens(c.openId, c.name, c.clientId));
     }
 
     if (b.grant_type === 'refresh_token') {
       const row = resolveBearer(b.refresh_token);
-      if (!row || row.kind !== 'refresh') return res.status(400).json({ error: 'invalid_grant' });
+      if (!row || row.kind !== 'refresh') return deny('refresh token không hợp lệ hoặc đã hết hạn');
       const db = load();
       delete db.tokens[hashToken(b.refresh_token)]; // xoay, giống Lark
       save(db);
+      // Bearer sống 30 ngày nên đây là sự kiện hiếm — ghi mọi lượt vẫn rẻ, và
+      // nó là mốc duy nhất chứng minh vòng xoay token phía Claude còn chạy.
+      auditAuth({ event: 'refresh', openId: row.openId, userName: row.name, clientId: row.clientId });
       return res.json(issueTokens(row.openId, row.name, row.clientId));
     }
 
+    auditAuth({ event: 'grant_denied', clientId: b.client_id || null, ok: false, errorMsg: 'grant_type không hỗ trợ', detail: { grant_type: b.grant_type || null } });
     res.status(400).json({ error: 'unsupported_grant_type' });
   });
 
@@ -292,28 +398,15 @@ export function buildOAuthRouter() {
     const row = resolveBearer(b.token);
     if (!row) return res.status(200).end();
 
-    const db = load();
-    const revoked = [];
-    for (const [hash, t] of Object.entries(db.tokens)) {
-      if (t.openId !== row.openId || t.clientId !== row.clientId) continue;
-      revoked.push(t.kind);
-      delete db.tokens[hash];
-    }
-
-    const stillHasClients = new Set(
-      Object.values(db.tokens).filter((t) => t.openId === row.openId).map((t) => t.clientId),
-    );
-    save(db);
-
-    revokeMachines({ openId: row.openId, clientIds: [row.clientId] });
-    if (stillHasClients.size === 0) deleteUser(row.openId);
-
-    console.log(
-      `[revoke] ${row.name || row.openId} / ${row.clientId} — bỏ ${revoked.length} token` +
-        (stillHasClients.size === 0 ? ', hết chỗ cắm nên xoá luôn token Lark' : `, còn ${stillHasClients.size} chỗ cắm`),
-    );
+    const out = revokeGrant({ openId: row.openId, clientId: row.clientId, name: row.name });
+    auditAuth({ event: 'revoke', openId: row.openId, userName: row.name, clientId: row.clientId, detail: out });
     res.status(200).end();
   });
+
+  // Đã từng có `/admin/revoke` cho dashboard bấm từ xa. Bỏ đi vì không dựng
+  // được đăng nhập cho dashboard: một endpoint thu hồi mở ra HTTP mà chỉ dựa
+  // vào một secret dùng chung là quá nhiều rủi ro cho thứ `npm run revoke` đã
+  // làm được. Cần lại thì lấy từ git — `revokeGrant()` vẫn còn nguyên.
 
   return r;
 }

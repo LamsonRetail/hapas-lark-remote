@@ -1,6 +1,7 @@
 import { config } from './config.js';
 import { larkApi, fetchRetry } from './lark.js';
 import { getUser, saveUser, withUserLock } from './store.js';
+import { auditAuth } from './audit.js';
 
 const FORM = { 'Content-Type': 'application/x-www-form-urlencoded' };
 const form = (o) => new URLSearchParams(o).toString();
@@ -85,6 +86,7 @@ export async function persistTokens(tokens) {
     scope: tokens.scope || '',
     updatedAt: Date.now(),
   });
+  auditAuth({ event: 'lark_login', openId, userName: me.data.name, detail: { scope: tokens.scope || null } });
   return { openId, name: me.data.name };
 }
 
@@ -93,6 +95,16 @@ export class ReauthRequired extends Error {
     super(msg);
     this.reauth = true;
   }
+}
+
+/**
+ * Ghi lại rồi trả về lỗi để `throw`. Một sự cố = ĐÚNG một dòng: refresh hỏng
+ * bao giờ cũng dẫn tới ReauthRequired, nên ghi riêng thêm một dòng "refresh
+ * failed" chỉ là đếm cùng một chuyện hai lần. Lý do nằm trong `error_msg`.
+ */
+function reauth(openId, userName, reason) {
+  auditAuth({ event: 'reauth_required', openId, userName, ok: false, errorMsg: reason });
+  return new ReauthRequired(reason);
 }
 
 /**
@@ -105,16 +117,16 @@ export class ReauthRequired extends Error {
 export function getValidAccessToken(openId) {
   return withUserLock(openId, async () => {
     const u = getUser(openId);
-    if (!u) throw new ReauthRequired('Chưa đăng nhập Lark.');
+    if (!u) throw reauth(openId, null, 'Chưa đăng nhập Lark.');
 
     if (Date.now() < u.accessExpiresAt - 120_000) return u.accessToken; // còn >2 phút thì dùng luôn
 
-    if (!u.refreshToken) throw new ReauthRequired('Không có refresh token — cần đăng nhập lại (thiếu scope offline_access).');
-    if (Date.now() > u.refreshExpiresAt) throw new ReauthRequired('Refresh token đã quá 7 ngày — cần đăng nhập lại.');
+    if (!u.refreshToken) throw reauth(openId, u.name, 'Không có refresh token — cần đăng nhập lại (thiếu scope offline_access).');
+    if (Date.now() > u.refreshExpiresAt) throw reauth(openId, u.name, 'Refresh token đã quá 7 ngày — cần đăng nhập lại.');
 
     const j = await tokenEndpoint({ grant_type: 'refresh_token', refresh_token: u.refreshToken });
     if (!j.access_token) {
-      throw new ReauthRequired(`Refresh thất bại (${j.error || '?'}) — cần đăng nhập lại.`);
+      throw reauth(openId, u.name, `Refresh thất bại (${j.error || '?'}) — cần đăng nhập lại.`);
     }
 
     saveUser(openId, {

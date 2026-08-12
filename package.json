@@ -14,6 +14,7 @@
     "parity": "node test/parity-check.js",
     "revoke": "node revoke.js",
     "token": "node token.js",
+    "keepalive": "node src/keepalive.js",
     "test:write": "node test/smoke-write.js"
   },
   "engines": {

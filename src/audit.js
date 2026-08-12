@@ -123,6 +123,38 @@ export function auditToolCall({ openId, userName, clientId, toolName, args, ok, 
   else schedule();
 }
 
+/**
+ * Sự kiện vòng đời xác thực, ghi chung bảng với tool call.
+ *
+ * VÌ SAO CẦN: `machines` chỉ giữ TRẠNG THÁI hiện tại — `last_seen` bị ghi đè mỗi
+ * lần chạm, nên không còn dấu vết của sự kiện. Không có bảng nào trả lời được
+ * "tuần này bao nhiêu người phải đăng nhập lại", mà đó đúng là câu hỏi cần đo
+ * khi refresh token của Lark chỉ sống 7 ngày.
+ *
+ * VÌ SAO KHÔNG TÁCH BẢNG: dùng lại `audit_logs` là được luôn index, job dọn,
+ * batching và rollup có sẵn. Giá phải trả là `tool_name` mang tên sự kiện —
+ * chấp nhận được vì tiền tố `__auth.` không thể đụng tên tool thật (tool MCP
+ * không có tên bắt đầu bằng dấu gạch dưới). Dashboard lọc bằng
+ * `tool_name like '__auth.%'`; xem view trong supabase/rollup.sql.
+ *
+ * Chỉ ghi sự kiện TRẢ LỜI ĐƯỢC một câu hỏi. Refresh thành công thì không ghi:
+ * nó xảy ra mỗi 2 tiếng cho mỗi người đang hoạt động, ghi hết là ~70 dòng/ngày
+ * toàn "vẫn ổn" — đúng cái bệnh đã phải sửa ở canary. Trạng thái bình thường đã
+ * được keepalive tóm tắt đúng một dòng mỗi ngày.
+ */
+export function auditAuth({ event, openId, userName, clientId, ok = true, errorMsg = null, detail = null }) {
+  auditToolCall({
+    openId,
+    userName,
+    clientId,
+    toolName: `__auth.${event}`,
+    args: detail,
+    ok,
+    errorMsg,
+    durationMs: null,
+  });
+}
+
 /** Gọi khi tắt server để không mất lô cuối. */
 export async function flushAudit() {
   if (timer) {

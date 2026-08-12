@@ -20,8 +20,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import readline from 'node:readline/promises';
 import { config } from './src/config.js';
-import { listUsers, getUser, deleteUser } from './src/store.js';
-import { revokeMachines } from './src/machines.js';
+import { listUsers, getUser } from './src/store.js';
+import { revokeGrant } from './src/oauth-as.js';
 
 const OAUTH_DB = path.join(config.dataDir, 'oauth.json');
 // Tách cờ khỏi tham số vị trí. `--yes` không có giá trị đi kèm, nên cờ nào mà
@@ -47,12 +47,6 @@ const target = positional[0];
 const onlyClientArg = () => (typeof flags.client === 'string' ? ` --client ${flags.client}` : '');
 
 const loadOAuth = () => (fs.existsSync(OAUTH_DB) ? JSON.parse(fs.readFileSync(OAUTH_DB, 'utf8')) : { clients: {}, tokens: {} });
-const saveOAuth = (d) => {
-  const tmp = OAUTH_DB + '.tmp';
-  fs.writeFileSync(tmp, JSON.stringify(d, null, 2), { mode: 0o600 });
-  fs.renameSync(tmp, OAUTH_DB);
-};
-
 /** Ai đang có chỗ cắm nào, gom từ oauth.json. */
 function connections() {
   const db = loadOAuth();
@@ -147,20 +141,14 @@ async function main() {
     if (ok !== 'y' && ok !== 'yes') return console.log('Đã huỷ, không thay đổi gì.');
   }
 
-  const db = loadOAuth();
-  let removed = 0;
-  for (const [hash, t] of Object.entries(db.tokens)) {
-    if (t.openId !== openId) continue;
-    if (onlyClient && t.clientId !== onlyClient) continue;
-    delete db.tokens[hash];
-    removed++;
-  }
-  saveOAuth(db);
+  // Dùng chung hàm với /revoke và /admin/revoke. Trước đây file này giữ bản sao
+  // riêng của cùng một logic — ba bản sao thì sớm muộn một bên quên xoá token
+  // Lark rồi tưởng đã thu hồi xong, mà đó là bên nguy hiểm nhất để sai.
+  const out = revokeGrant({ openId, clientId: onlyClient || null, name });
 
-  if (dropsLark) deleteUser(openId);
-  revokeMachines({ openId, clientIds: onlyClient ? [onlyClient] : [] });
-
-  console.log(`\nXong: bỏ ${removed} bearer token${dropsLark ? ', xoá token Lark' : ''}, đánh dấu machines = revoked.`);
+  console.log(
+    `\nXong: bỏ ${out.tokens} bearer token${out.larkTokenDeleted ? ', xoá token Lark' : ''}, đánh dấu machines = revoked.`,
+  );
   // machines ghi nền, đợi một nhịp cho request bay xong
   await new Promise((r) => setTimeout(r, 1500));
 }

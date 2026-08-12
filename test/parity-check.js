@@ -44,9 +44,11 @@ const INTENTIONAL = {
   // Bản remote BỎ HẲN Whisper server. Lark Minutes đã tự tạo transcript, chính
   // xác hơn và không cần hạ tầng ngoài. Agent meeting của bản zip giữ nguyên,
   // không đụng tới.
-  lark_drive_transcribe: 'Bỏ Whisper. Transcript lấy từ Lark Minutes qua minutes_transcript / lark_meeting_note.',
+  lark_drive_transcribe: 'Bỏ Whisper. Transcript lấy từ Lark Minutes qua minutes_search + minutes_transcript.',
   meeting_note_publish: 'Thuộc luồng Whisper cũ (submit → hàng đợi → DM kết quả). Bản remote lấy transcript đồng bộ nên không cần.',
   meeting_note_status: 'Như trên — không còn hàng đợi để hỏi trạng thái.',
+  lark_meeting_note:
+    'Chỉ là lớp bọc gộp minutes_search + metadata + /artifacts thành một lượt. Ba tool rời đã phủ đủ, nên bỏ để bớt một đường code phải nuôi.',
 };
 
 function fromIndexJs(file) {
