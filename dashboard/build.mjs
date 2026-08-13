@@ -35,14 +35,11 @@ const tpl = fs.readFileSync(path.join(HERE, 'template.html'), 'utf8');
 // Bản xem trước: số nướng sẵn, không thẻ <html>/<head> (Artifact tự bọc).
 fs.writeFileSync(path.join(HERE, 'preview.html'), tpl.replace('/*__DATA__*/null', JSON.stringify(data)));
 
-// Bản Vercel: trang đầy đủ, số lấy từ /api/data lúc mở. `type="module"` để dùng
-// được await ở cấp cao nhất.
+// Bản Vercel: GIỮ NGUYÊN `/*__DATA__*/null` để BAKED = null → trang tự fetch
+// /api/data lúc mở rồi poll lại định kỳ (real-time). Không nướng số vào đây.
 fs.writeFileSync(
   path.join(HERE, 'index.html'),
-  '<!doctype html>\n<meta charset="utf-8">\n<meta name="viewport" content="width=device-width,initial-scale=1">\n' +
-    tpl
-      .replace('<script>', '<script type="module">')
-      .replace("/*__DATA__*/null", "await (await fetch('/api/data', { cache: 'no-store' })).json()"),
+  '<!doctype html>\n<meta charset="utf-8">\n<meta name="viewport" content="width=device-width,initial-scale=1">\n' + tpl,
 );
 
 // Hàm serverless không import được src/ (thiếu biến môi trường của Lark), nên
