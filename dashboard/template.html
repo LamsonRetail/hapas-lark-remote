@@ -145,25 +145,7 @@
     </div>
   </section>
 
-  <!-- Tầng 4: cần xử lý -->
-  <div class="zone">Cần xử lý</div>
-  <section class="g2">
-    <div class="card pad">
-      <h2>Tool đang hỏng <span class="n" id="broken-n"></span></h2>
-      <div class="scroll"><table id="t-broken"></table></div>
-      <div id="healed"></div>
-    </div>
-    <div class="card pad">
-      <h2>Lỗi người dùng gặp <span class="n" id="orphan-n"></span></h2>
-      <div class="scroll"><table id="t-orphan"></table></div>
-    </div>
-  </section>
-  <section class="card pad">
-    <h2>Mã lỗi <span class="n" id="codes-n"></span></h2>
-    <div class="scroll"><table id="t-codes"></table></div>
-  </section>
-
-  <!-- Tầng 5: sử dụng -->
+  <!-- Tầng 4: sử dụng -->
   <div class="zone">Sử dụng</div>
   <section class="g2">
     <div class="card pad">
@@ -267,8 +249,8 @@
   // ── KPI ──────────────────────────────────────────────────────────────
   const k = DATA.kpi;
   $('kpi').innerHTML = [
-    { hero: 1, k: 'Lỗi người dùng gặp', v: k.orphanRate + '%', d: `${nf(k.orphans)} lượt không tự cứu được` },
-    { k: 'Lượt gọi', v: nf(k.calls), d: `${DATA.daily.length} ngày có dữ liệu` },
+    { hero: 1, k: 'Lượt gọi', v: nf(k.calls), d: `${DATA.daily.length} ngày có dữ liệu` },
+    { k: 'Người dùng', v: nf(k.users), d: `${DATA.connectors.length} chỗ cắm` },
     { k: 'Độ trễ p95', v: ms(k.p95), d: 'trung vị ' + ms(k.p50) },
     { k: 'Tool đã dùng', v: `${k.toolsUsed}<small>/${k.toolsTotal}</small>`, d: `${DATA.unused.length} chưa ai gọi` },
   ].map((t) => `<div class="card kpi${t.hero ? ' hero' : ''}">
@@ -334,52 +316,13 @@
   })();
 
   const count = (id, n) => { if ($(id)) $(id).textContent = n ? `· ${nf(n)}` : ''; };
-  const okEmpty = (msg) => `<tbody><tr><td><div class="ok-empty"><span class="ic">●</span>${msg}</div></td></tr></tbody>`;
-
-  // ── đang hỏng ────────────────────────────────────────────────────────
-  count('broken-n', DATA.risky.length);
-  $('t-broken').innerHTML = DATA.risky.length
-    ? '<thead><tr><th>Tool</th><th class="r">Lượt</th><th class="r">Lỗi</th><th class="r">Từ</th></tr></thead><tbody>' +
-      DATA.risky.map((t) => `<tr><td class="mono">${esc(t.name)}</td><td class="r num">${nf(t.calls)}</td>
-        <td class="r"><span class="pill sev-x" style="--sev: var(--${t.errRate >= 50 ? 'critical' : 'serious'})"><span class="dot"></span>${nf(t.errors)}</span></td>
-        <td class="r num dim">${dt(t.lastErr)}</td></tr>`).join('') + '</tbody>'
-    : okEmpty('Không có tool nào đang hỏng.');
-
-  $('healed').innerHTML = DATA.healed.length
-    ? `<p class="note">Đã chạy lại: ${DATA.healed.map((t) => `<span class="mono">${esc(t.name)}</span>`).join(', ')}</p>` : '';
-
-  // ── lỗi người dùng gặp (orphans) — lỗi KHÔNG tự cứu được ──────────────
-  count('orphan-n', DATA.orphans.length);
-  $('t-orphan').innerHTML = DATA.orphans.length
-    ? '<thead><tr><th>Lúc</th><th>Tool</th><th>Người</th><th>Thông báo</th></tr></thead><tbody>' +
-      DATA.orphans.slice(0, 40).map((o) => `<tr>
-        <td class="num dim" style="white-space:nowrap">${dt(o.at)}</td>
-        <td class="mono">${esc(o.tool)}</td>
-        <td class="dim">${esc(o.user || '—')}</td>
-        <td class="dim">${esc(o.msg) || '—'}</td></tr>`).join('') + '</tbody>'
-    : okEmpty('Không có lỗi nào lọt tới người dùng.');
-
-  // ── mã lỗi ───────────────────────────────────────────────────────────
-  // Chỉ giữ lỗi ĐÁNG theo dõi: bỏ "Thiếu quyền" (tool vẫn chạy, người dùng chỉ
-  // thiếu quyền) và lỗi lẻ 1 lần không nghiêm trọng. Giữ mọi lỗi critical (nghi
-  // đổi API) và lỗi lặp lại từ 2 lần. Đây là thứ làm bảng "nhìn đầy lỗi" trong
-  // khi luồng vẫn chạy — lọc đi để dễ theo dõi thứ thật sự hỏng.
-  const codes = DATA.codes.filter((c) => c.sev !== 'warning' && (c.sev === 'critical' || c.hits >= 2));
-  count('codes-n', codes.length);
-  $('t-codes').innerHTML = codes.length
-    ? '<thead><tr><th>Mã</th><th class="r">Lượt</th><th>Phân loại</th><th>Tool</th><th>Thông báo</th></tr></thead><tbody>' +
-      codes.map((c) => `<tr><td class="mono">${esc(c.code)}</td><td class="r num">${nf(c.hits)}</td>
-        <td><span class="pill sev-x" style="--sev: var(--${c.sev})"><span class="dot"></span>${esc(c.label)}</span></td>
-        <td class="mono dim">${c.tools.slice(0, 2).map(esc).join('<br>')}${c.tools.length > 2 ? `<br>+${c.tools.length - 2}` : ''}</td>
-        <td class="dim">${esc(c.sample) || '—'}</td></tr>`).join('') + '</tbody>'
-    : okEmpty('Không có lỗi đáng theo dõi.');
 
   // ── người dùng ───────────────────────────────────────────────────────
   count('users-n', DATA.users.length);
   $('t-users').innerHTML =
-    '<thead><tr><th>Người</th><th class="r">Lượt</th><th class="r">Lỗi</th><th class="r">Tool</th><th class="r">Gần nhất</th></tr></thead><tbody>' +
+    '<thead><tr><th>Người</th><th class="r">Lượt</th><th class="r">Tool</th><th class="r">Gần nhất</th></tr></thead><tbody>' +
     DATA.users.map((u) => `<tr><td>${esc(u.name)}</td><td class="r num">${nf(u.calls)}</td>
-      <td class="r num">${nf(u.errors)}</td><td class="r num">${nf(u.tools)}</td>
+      <td class="r num">${nf(u.tools)}</td>
       <td class="r num dim" style="white-space:nowrap">${dt(u.last)}</td></tr>`).join('') + '</tbody>';
 
   // ── chỗ cắm ──────────────────────────────────────────────────────────

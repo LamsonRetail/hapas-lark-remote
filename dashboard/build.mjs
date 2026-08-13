@@ -50,7 +50,7 @@ fs.writeFileSync(
 fs.writeFileSync(path.join(HERE, 'tools.json'), JSON.stringify(TOOLS.map((t) => t.name).sort()));
 
 console.log(`lượt gọi      : ${data.kpi.calls}`);
-console.log(`lỗi           : ${data.kpi.errors} (${data.kpi.errRate}%) — không cứu được ${data.kpi.orphans} (${data.kpi.orphanRate}%)`);
+console.log(`lỗi           : ${data.kpi.errors} (${data.kpi.errRate}%) — Lark không phản hồi ${data.kpi.noResp} (${data.kpi.noRespRate}%)`);
 console.log(`tool          : ${data.kpi.toolsUsed}/${data.kpi.toolsTotal} đã dùng, ${data.unused.length} chưa`);
 console.log(`chỗ cắm       : ${data.connectors.length}`);
 console.log(`→ dashboard/preview.html + tools.json`);

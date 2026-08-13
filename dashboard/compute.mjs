@@ -128,21 +128,27 @@ export async function computeDashboard({ sb, toolNames, appId, windowDays = 30 }
     .sort((a, b) => b.hits - a.hits);
 
   /**
-   * Lỗi KHÔNG được cứu — chỉ số duy nhất nói về trải nghiệm người dùng.
+   * "Lark không phản hồi" — lớp lỗi DUY NHẤT coi là ảnh hưởng người dùng.
    *
-   * Phần lớn lỗi là Claude mò: gọi hỏng, đọc thông báo, sửa rồi gọi lại thành
-   * công trong vài giây; người dùng chỉ thấy kết quả cuối. Đo bằng: sau mỗi
-   * lỗi, cùng người đó có lượt THÀNH CÔNG nào trong 5 phút kế tiếp không.
+   * Chỉ tính khi Lark KHÔNG trả lời: endpoint trả HTML/404 (lark_code
+   * 'non_json') hoặc mạng timeout/đứt kết nối. Permission, validation, business
+   * là Lark ĐÃ trả lời — chỉ là trả "không" — nên KHÔNG tính: hệ thống vẫn chạy,
+   * người dùng chỉ thiếu quyền hoặc nhập sai.
    *
-   * Là ước lượng LẠC QUAN — lượt thành công đó có thể thuộc việc khác. Con số
-   * là cận trên; danh sách lỗi mồ côi mới là phần chắc chắn.
+   * Vẫn lọc "không được cứu": nếu cùng người có lượt THÀNH CÔNG trong 5 phút kế
+   * (Claude thử lại hoặc đi đường khác), coi như không tới tay người dùng.
    */
+  const isNoResponse = (r) =>
+    r.lark_code === 'non_json' ||
+    (!r.lark_code && /timeout|abort|fetch failed|network|econn|etimedout|socket|getaddrinfo/i.test(r.error_msg || ''));
+
   const okTimes = calls.filter((r) => r.ok === true).map((r) => ({ t: new Date(r.created_at).getTime(), u: r.user_name }));
-  const orphans = [];
+  const noResponse = [];
   for (const e of errs) {
+    if (!isNoResponse(e)) continue;
     const t = new Date(e.created_at).getTime();
     if (okTimes.some((o) => o.u === e.user_name && o.t > t && o.t - t <= 300000)) continue;
-    orphans.push({ at: e.created_at, tool: e.tool_name, code: e.lark_code, msg: (e.error_msg || '').slice(0, 120), user: e.user_name });
+    noResponse.push({ at: e.created_at, tool: e.tool_name, code: e.lark_code, msg: (e.error_msg || '').slice(0, 120), user: e.user_name });
   }
 
   /**
@@ -189,8 +195,8 @@ export async function computeDashboard({ sb, toolNames, appId, windowDays = 30 }
       calls: calls.length,
       errors: errs.length,
       errRate: pct(errs.length, calls.length),
-      orphans: orphans.length,
-      orphanRate: pct(orphans.length, calls.length),
+      noResp: noResponse.length,
+      noRespRate: pct(noResponse.length, calls.length),
       p50: quant(durs, 0.5),
       p95: quant(durs, 0.95),
       users: users.length,
@@ -209,8 +215,7 @@ export async function computeDashboard({ sb, toolNames, appId, windowDays = 30 }
     healed: tools.filter((t) => t.healed && t.errors >= 2),
     unused,
     users,
-    codes,
-    orphans,
+    noResponse,
     connectors,
     auth: [...authCounts.entries()].map(([event, n]) => ({ event, n })).sort((a, b) => b.n - a.n),
   };
