@@ -353,12 +353,13 @@
   // ── chỗ cắm ──────────────────────────────────────────────────────────
   count('conn-n', DATA.connectors.length);
   $('t-conn').innerHTML =
-    '<thead><tr><th>Người</th><th>Nối bằng</th><th class="r">Lượt</th><th class="r">Gần nhất</th><th>Trạng thái</th></tr></thead><tbody>' +
+    '<thead><tr><th>Người</th><th>Nối bằng</th><th class="r">Lượt</th><th class="r">Gọi gần nhất</th><th class="r">Thấy gần nhất</th><th>Trạng thái</th></tr></thead><tbody>' +
     DATA.connectors.map((c) => `<tr>
       <td>${esc(c.user || '—')}</td>
       <td>${esc(c.app || '—')} <span class="mono dim" style="font-size:11px">${esc(c.clientId)}</span></td>
       <td class="r num">${nf(c.calls)}</td>
       <td class="r num dim" style="white-space:nowrap">${dt(c.last)}</td>
+      <td class="r num dim" style="white-space:nowrap">${esc(age(c.seen))}</td>
       <td><span class="pill sev-x" style="--sev: var(--${c.status === 'active' ? 'good' : 'critical'})"><span class="dot"></span>${esc(c.status)}</span></td>
     </tr>`).join('') + '</tbody>';
 

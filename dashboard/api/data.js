@@ -37,9 +37,11 @@ export default async function handler(req, res) {
       toolNames,
       appId: process.env.LARK_APP_ID || '',
     });
-    // Dashboard vận hành thì số cũ vài phút vẫn dùng được, nhưng đừng để CDN
-    // giữ lâu hơn thế — người mở trang lúc sự cố cần thấy trạng thái mới.
-    res.setHeader('Cache-Control', 's-maxage=60, stale-while-revalidate=120');
+    // KHÔNG cache. Trang poll lại mỗi 30s để theo dõi real-time, mà `s-maxage`
+    // thì bảo CDN giữ bản cũ tới 60s + phục vụ stale thêm 120s — poll xong vẫn
+    // nhận đúng bản cũ đó, tưởng hệ thống đứng yên trong khi nó đang chạy.
+    // `no-store` ở vercel.json chỉ chặn cache phía trình duyệt, không chặn edge.
+    res.setHeader('Cache-Control', 'no-store');
     res.json(data);
   } catch (e) {
     res.status(502).json({ error: e.message });

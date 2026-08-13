@@ -169,7 +169,17 @@ export async function computeDashboard({ sb, toolNames, appId, windowDays = 30 }
   const connectors = [...connMap.values()]
     .map((c) => {
       const m = byMid.get(machineIdFor(c.openId, c.clientId));
-      return { ...c, app: m?.client_app || null, status: m?.status || 'không rõ', installed: m?.installed_at || null };
+      // `last` (từ audit) và `seen` (từ machines) trả lời hai câu khác nhau:
+      // lần cuối GỌI tool, và lần cuối server CHẠM vào chỗ cắm này — xoay token
+      // cũng tính. Để cạnh nhau thì chênh lệch tự tố cáo: còn nối mà lâu không
+      // gọi là bình thường; gọi gần đây mà lâu không thấy là phiên đã chết.
+      return {
+        ...c,
+        app: m?.client_app || null,
+        status: m?.status || 'không rõ',
+        installed: m?.installed_at || null,
+        seen: m?.last_seen || null,
+      };
     })
     .sort((a, b) => b.calls - a.calls);
 
