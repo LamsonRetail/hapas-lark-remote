@@ -60,6 +60,18 @@ async function ensureScratch(api, state) {
 }
 
 /**
+ * Base v3 nhất quán kiểu cuối cùng: ghi xong đọc lại NGAY thì thỉnh thoảng
+ * chưa thấy, vài giây sau lại thấy. Probe cũ kết luận hỏng ngay lần đọc đầu
+ * nên nó báo động giả — bản ghi vẫn vào bảng bình thường.
+ *
+ * Thử lại vài nhịp rồi mới kết luận. Hỏng thật thì sau ~4,5 giây vẫn hỏng, còn
+ * trễ vài giây thì không đáng gọi là hỏng. Chỉ tốn thêm thời gian ở đúng những
+ * lượt sắp fail, mà canary thì mỗi giờ mới chạy một lần.
+ */
+const READBACK_WAITS = [0, 1500, 3000];
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+/**
  * Ghi một bản ghi rồi đọc lại để chắc nó THẬT SỰ vào bảng, sau đó xoá.
  * Chỉ xem `code: 0` là không đủ: Base v3 nhận shape sai vẫn có thể trả 0.
  */
@@ -74,9 +86,18 @@ async function probeBase(api, s) {
   if (!id) throw new Error('base_record_create không trả record_id_list — shape response đã đổi');
 
   try {
-    const list = await call(api, 'base_record_list', { base_token: s.base, table_id: s.table, limit: 200 });
-    if (!(list.data?.record_id_list || []).includes(id)) {
-      throw new Error('ghi xong nhưng base_record_list không thấy bản ghi');
+    let seen = false;
+    for (const wait of READBACK_WAITS) {
+      if (wait) await sleep(wait);
+      const list = await call(api, 'base_record_list', { base_token: s.base, table_id: s.table, limit: 200 });
+      if ((list.data?.record_id_list || []).includes(id)) {
+        seen = true;
+        break;
+      }
+    }
+    if (!seen) {
+      const total = READBACK_WAITS.reduce((a, b) => a + b, 0) / 1000;
+      throw new Error(`ghi xong nhưng base_record_list không thấy bản ghi sau ${total}s`);
     }
   } finally {
     await api.post(

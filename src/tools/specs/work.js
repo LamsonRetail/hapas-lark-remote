@@ -136,7 +136,9 @@ export default [
     name: 'mail_triage',
     desc: '[MAIL] Đọc lướt hộp thư đến của bạn.',
     schema: {
-      page_size: z.number().int().max(50).optional(),
+      // Lark chặn ở 20. Khai .max(50) thì model đọc schema tưởng được 50, tự
+      // chọn 30 và ăn 99992402 — 4/6 lượt gọi hỏng đúng vì thế.
+      page_size: z.number().int().max(20).optional(),
       folder_id: z.string().optional().describe('Mặc định INBOX'),
     },
     handler: async (a, api) => {
