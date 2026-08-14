@@ -1,10 +1,15 @@
 /**
  * Giao diện dùng chung cho MỌI trang của dashboard.
  *
- * build.mjs nhúng thẳng file này vào chỗ đánh dấu /*__CSS__*/ của từng
- * template. Nhúng chứ không <link>: bản preview.html phải mở được như một file
- * rời (không máy chủ, không thư mục kèm theo), mà stylesheet ngoài thì mở kiểu
- * đó là mất sạch giao diện.
+ * build.mjs nhúng thẳng file này vào chỗ đánh dấu __CSS__ trong thẻ style của
+ * từng template. Nhúng chứ không <link>: bản preview.html phải mở được như một
+ * file rời (không máy chủ, không thư mục kèm theo), mà stylesheet ngoài thì mở
+ * kiểu đó là mất sạch giao diện.
+ *
+ * ĐỪNG viết tên chỗ đánh dấu đó kèm đủ hai dấu comment vào đây. Bản đầu có, và
+ * dấu đóng của nó kết thúc sớm chính khối chú thích này: trình duyệt nuốt luôn
+ * khối :root ngay bên dưới, mọi biến màu thành rỗng và cả trang ra đen trắng.
+ * Không có lỗi nào trong console — CSS hỏng thì im lặng bỏ qua, không kêu.
  *
  * Sửa ở đây là cả hai trang đổi theo — đó là điểm của việc tách file.
  */
@@ -93,7 +98,10 @@
   h2 .n { font-size: 11px; color: var(--ink-3); font-weight: 600; letter-spacing: 0; text-transform: none; }
 
   .g2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
-  .g4 { display: grid; grid-template-columns: 1.5fr 1fr 1fr 1fr; gap: 14px; }
+  /* Ô đầu rộng hơn vì nó là ô hero. Năm cột từ khi tách "Lỗi" ra riêng — gộp
+     vào ô "Lượt gọi" thì con số cần nhìn nhất lại nằm ở dòng chú thích mờ. */
+  .g4 { display: grid; grid-template-columns: 1.4fr repeat(4, 1fr); gap: 14px; }
+  @media (max-width: 1180px) { .g4 { grid-template-columns: repeat(3, 1fr); } }
   @media (max-width: 920px) { .g2 { grid-template-columns: 1fr; } .g4 { grid-template-columns: repeat(2, 1fr); } }
   @media (max-width: 560px) { .g4 { grid-template-columns: 1fr; } }
 

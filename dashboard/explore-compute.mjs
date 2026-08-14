@@ -18,11 +18,11 @@ export const SKIP_CLIENTS = new Set(['local-admin', 'canary', 'revoke-test-a']);
 /** Cột audit_logs cần đọc để tính được mọi phép đo trong MEASURES. */
 export const EXPLORE_COLS = ['created_at', 'tool_name', 'user_name', 'client_id', 'ok', 'duration_ms', 'lark_code', 'source'];
 
-export function aggregate({ rows, dim: dimKey, include = 'tools' }) {
+export function aggregate({ rows, dim: dimKey, include = 'tools', user = '' }) {
   const dim = DIM_BY_KEY.get(dimKey);
   if (!dim) throw new Error(`Cột không hợp lệ: ${dimKey}`);
 
-  const kept = rows.filter((r) => {
+  const inScope = rows.filter((r) => {
     if (SKIP_CLIENTS.has(r.client_id)) return false;
     if (include === 'all') return true;
     // Mặc định bỏ __auth.* và canary: chúng là nhịp tim của hệ thống, không
@@ -30,6 +30,16 @@ export function aggregate({ rows, dim: dimKey, include = 'tools' }) {
     // sàn phẳng do canary tạo, che mất hình dạng thật của lưu lượng.
     return !String(r.tool_name || '').startsWith('__auth.') && r.tool_name !== 'canary_heartbeat';
   });
+
+  /**
+   * Danh sách người lấy TRƯỚC khi lọc, không phải sau — lọc rồi mới liệt kê thì
+   * chọn xong một người là ô chọn chỉ còn đúng người đó, không đổi sang ai được.
+   */
+  const users = [...new Set(inScope.map((r) => r.user_name).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'vi'));
+
+  // Nhóm theo tool + lọc một người = "người này đã gọi những tool nào" — mức
+  // bóc tách thứ hai mà một cột nhóm đơn lẻ không trả lời được.
+  const kept = user ? inScope.filter((r) => r.user_name === user) : inScope;
 
   /** Nhãn nhóm. `ok` là boolean, `lark_code` hay null — cả hai cần chữ, không phải "null"/"false". */
   const keyOf = (r) => {
@@ -65,5 +75,5 @@ export function aggregate({ rows, dim: dimKey, include = 'tools' }) {
   // lượt gọi để cái đáng nhìn nằm trên đầu.
   out.sort(dim.time ? (a, b) => a.key.localeCompare(b.key) : (a, b) => b.calls - a.calls);
 
-  return { dim: dim.key, include, total: kept.length, groups: out.length, rows: out };
+  return { dim: dim.key, include, user, users, total: kept.length, groups: out.length, rows: out };
 }

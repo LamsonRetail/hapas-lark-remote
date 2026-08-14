@@ -24,6 +24,10 @@ export default async function handler(req, res) {
   const days = WINDOWS.includes(+req.query?.days) ? +req.query.days : 30;
   const source = ['url', 'zip', 'all'].includes(req.query?.source) ? req.query.source : 'url';
   const include = req.query?.include === 'all' ? 'all' : 'tools';
+  // Lọc theo người khớp CHÍNH XÁC chuỗi ở phía máy chủ sau khi đã đọc về, không
+  // ghép vào truy vấn PostgREST — tên có dấu phẩy và ngoặc, mà cú pháp lọc của
+  // PostgREST lại dùng đúng hai ký tự đó làm dấu phân cách.
+  const user = String(req.query?.user || '').slice(0, 200);
 
   const since = new Date(Date.now() - days * 86400000).toISOString();
   const filter = source === 'all' ? '' : `&source=eq.${source}`;
@@ -41,7 +45,7 @@ export default async function handler(req, res) {
     }
 
     res.setHeader('Cache-Control', 'no-store');
-    res.json({ generatedAt: new Date().toISOString(), days, source, ...aggregate({ rows, dim: dim.key, include }) });
+    res.json({ generatedAt: new Date().toISOString(), days, source, ...aggregate({ rows, dim: dim.key, include, user }) });
   } catch (e) {
     res.status(502).json({ error: e.message });
   }

@@ -30,7 +30,37 @@ const sb = async (p) => {
   return r.json();
 };
 
-const CSS = read('base.css');
+/**
+ * CSS hỏng thì trình duyệt IM LẶNG bỏ qua — không log, không cảnh báo, trang
+ * vẫn hiện ra, chỉ là mất màu. Đã dính đúng một lần: chú thích đầu base.css
+ * viết cả `__CSS__` kèm hai dấu comment, dấu đóng của nó kết thúc sớm khối chú
+ * thích và trình duyệt nuốt luôn khối `:root` ngay dưới → toàn bộ biến màu
+ * rỗng, cả trang ra đen trắng ở chế độ sáng.
+ *
+ * Nên bóc chú thích đúng cách trình duyệt bóc, rồi kiểm mấy thứ BẮT BUỘC phải
+ * sống sót. Thà build gãy còn hơn deploy một trang mất màu.
+ */
+function checkCss(css) {
+  // Quét theo TRẠNG THÁI, không bằng regex. Regex bóc chú thích cho ra đúng kết
+  // quả mà trình duyệt cho — tức là nó cũng "không thấy" lỗi, vì lỗi nằm ở chỗ
+  // khối chú thích kết thúc SỚM chứ không phải ở chỗ thiếu dấu đóng.
+  let inComment = false;
+  for (let i = 0; i < css.length - 1; i++) {
+    const two = css.slice(i, i + 2);
+    if (!inComment && two === '/*') { inComment = true; i++; continue; }
+    if (inComment && two === '*/') { inComment = false; i++; continue; }
+    // CSS KHÔNG cho lồng chú thích: '/*' thứ hai không mở gì cả, nhưng '*/' của
+    // nó thì đóng thật — phần chữ còn lại rơi ra ngoài thành selector rác và
+    // nuốt luôn khối {…} ngay sau đó.
+    if (inComment && two === '/*') {
+      throw new Error(`base.css:${css.slice(0, i).split('\n').length} — '/*' lồng trong một chú thích. CSS không cho lồng: dấu '*/' của nó sẽ đóng sớm khối ngoài và làm mất quy tắc ngay bên dưới.`);
+    }
+  }
+  if (inComment) throw new Error('base.css: còn một chú thích chưa đóng.');
+  return css;
+}
+
+const CSS = checkCss(read('base.css'));
 const DOCTYPE = '<!doctype html>\n<meta charset="utf-8">\n<meta name="viewport" content="width=device-width,initial-scale=1">\n';
 
 /**

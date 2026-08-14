@@ -6,10 +6,15 @@
 <style>/**
  * Giao diện dùng chung cho MỌI trang của dashboard.
  *
- * build.mjs nhúng thẳng file này vào chỗ đánh dấu /*__CSS__*/ của từng
- * template. Nhúng chứ không <link>: bản preview.html phải mở được như một file
- * rời (không máy chủ, không thư mục kèm theo), mà stylesheet ngoài thì mở kiểu
- * đó là mất sạch giao diện.
+ * build.mjs nhúng thẳng file này vào chỗ đánh dấu __CSS__ trong thẻ style của
+ * từng template. Nhúng chứ không <link>: bản preview.html phải mở được như một
+ * file rời (không máy chủ, không thư mục kèm theo), mà stylesheet ngoài thì mở
+ * kiểu đó là mất sạch giao diện.
+ *
+ * ĐỪNG viết tên chỗ đánh dấu đó kèm đủ hai dấu comment vào đây. Bản đầu có, và
+ * dấu đóng của nó kết thúc sớm chính khối chú thích này: trình duyệt nuốt luôn
+ * khối :root ngay bên dưới, mọi biến màu thành rỗng và cả trang ra đen trắng.
+ * Không có lỗi nào trong console — CSS hỏng thì im lặng bỏ qua, không kêu.
  *
  * Sửa ở đây là cả hai trang đổi theo — đó là điểm của việc tách file.
  */
@@ -98,7 +103,10 @@
   h2 .n { font-size: 11px; color: var(--ink-3); font-weight: 600; letter-spacing: 0; text-transform: none; }
 
   .g2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
-  .g4 { display: grid; grid-template-columns: 1.5fr 1fr 1fr 1fr; gap: 14px; }
+  /* Ô đầu rộng hơn vì nó là ô hero. Năm cột từ khi tách "Lỗi" ra riêng — gộp
+     vào ô "Lượt gọi" thì con số cần nhìn nhất lại nằm ở dòng chú thích mờ. */
+  .g4 { display: grid; grid-template-columns: 1.4fr repeat(4, 1fr); gap: 14px; }
+  @media (max-width: 1180px) { .g4 { grid-template-columns: repeat(3, 1fr); } }
   @media (max-width: 920px) { .g2 { grid-template-columns: 1fr; } .g4 { grid-template-columns: repeat(2, 1fr); } }
   @media (max-width: 560px) { .g4 { grid-template-columns: 1fr; } }
 
@@ -266,6 +274,10 @@
         <div class="seg" id="f-kind"></div>
       </div>
       <div class="field">
+        <label for="f-user">Lọc theo người gọi</label>
+        <select id="f-user"></select>
+      </div>
+      <div class="field">
         <label for="f-source">Nguồn</label>
         <select id="f-source">
           <option value="url">Remote (url)</option>
@@ -283,7 +295,8 @@
   <section class="card pad">
     <h2 id="chart-title">Biểu đồ</h2>
     <div class="summary" id="summary"></div>
-    <div id="chart" style="margin-top:14px"></div>
+    <div class="legend" id="legend" style="margin-top:12px"></div>
+    <div id="chart"></div>
   </section>
 
   <section class="card pad">
@@ -348,6 +361,25 @@
     return nf(v);
   };
 
+  /**
+   * Màu của một cột = sức khoẻ của CHÍNH nhóm đó, không phải màu trang trí.
+   *
+   * Trước đây mọi cột cùng một sắc chàm, nên biểu đồ "lượt gọi theo tool" chỉ
+   * trả lời được "cái nào nhiều" — muốn biết cái nào đang hỏng phải dò xuống
+   * bảng bên dưới. Tô theo tỉ lệ lỗi thì hai câu hỏi đó được trả lời trong
+   * cùng một cái liếc mắt.
+   *
+   * Ba mức chứ không phải hai: 1 lỗi trên 200 lượt mà tô đỏ chót thì lần sau
+   * không ai tin màu đỏ nữa.
+   */
+  const HEALTH = [
+    { sev: 'good', label: 'Không lỗi' },
+    { sev: 'warning', label: 'Dưới 20% lỗi' },
+    { sev: 'critical', label: 'Từ 20% lỗi' },
+  ];
+  const health = (r) => (!r.errors ? 'good' : r.errRate >= 20 ? 'critical' : 'warning');
+  const fill = (r) => `var(--${health(r)})`;
+
   /** Trục tròn số: 2–5 vạch, không ra mấy con lẻ như 1.372,4. */
   function scale(max) {
     if (!(max > 0)) return { top: 1, step: 1 };
@@ -374,7 +406,7 @@
   // ── Trạng thái, đồng bộ với thanh địa chỉ ──────────────────────────────
   // Để trên URL chứ không localStorage: một cách nhìn đáng chú ý thì phải gửi
   // được cho người khác bằng cách dán link, không phải mô tả bằng lời.
-  const DEFAULTS = { dim: 'tool_name', measure: 'calls', days: 30, kind: '', source: 'url', include: 'tools' };
+  const DEFAULTS = { dim: 'tool_name', measure: 'calls', days: 30, kind: '', source: 'url', include: 'tools', user: '' };
   const state = { ...DEFAULTS };
   (function readUrl() {
     const q = new URLSearchParams(location.search);
@@ -407,6 +439,7 @@
     const redraw = (patch) => { Object.assign(state, patch); pushUrl(); draw(); };
 
     $('f-dim').addEventListener('change', (e) => reload({ dim: e.target.value, kind: '' }));
+    $('f-user').addEventListener('change', (e) => reload({ user: e.target.value }));
     $('f-source').addEventListener('change', (e) => reload({ source: e.target.value }));
     $('f-include').addEventListener('change', (e) => reload({ include: e.target.checked ? 'all' : 'tools' }));
     $('f-days').addEventListener('click', (e) => { const b = e.target.closest('button'); if (b) reload({ days: +b.dataset.v }); });
@@ -417,6 +450,13 @@
   }
 
   function syncControls() {
+    // Danh sách người do máy chủ trả về theo từng cửa sổ thời gian — đổi sang
+    // 7 ngày thì người không hoạt động trong 7 ngày đó phải biến mất khỏi ô chọn.
+    const us = (DATA && DATA.users) || [];
+    $('f-user').innerHTML = '<option value="">Tất cả</option>' +
+      us.map((u) => `<option value="${esc(u)}">${esc(cut(u, 40))}</option>`).join('');
+    $('f-user').value = us.includes(state.user) ? state.user : '';
+
     // Danh sách phép đo dựng lại theo cột đang nhóm, nên phải vẽ lại ô chọn
     // mỗi lần — không thì mục vừa bị loại vẫn nằm đó và chọn được.
     const av = measuresFor(state.dim);
@@ -452,13 +492,22 @@
     const shown = rows.slice(0, MAX_BARS);
     const cutN = rows.length - shown.length;
 
-    $('chart-title').textContent = `${me.label} theo ${dim.label.toLowerCase()}`;
+    $('chart-title').textContent = `${me.label} theo ${dim.label.toLowerCase()}`
+      + (DATA.user ? ` — chỉ ${cut(DATA.user, 34)}` : '');
     $('summary').innerHTML = [
       `<span>Nguồn dữ liệu <b>${nf(DATA.total)}</b> lượt gọi</span>`,
       `<span>Gộp thành <b>${nf(DATA.groups)}</b> nhóm</span>`,
       `<span>Cửa sổ <b>${state.days}</b> ngày</span>`,
+      DATA.user ? `<span>Đang lọc <b>1</b>/${nf(DATA.users.length)} người</span>` : '',
       cutN > 0 ? `<span>Biểu đồ hiện <b>${nf(shown.length)}</b> nhóm lớn nhất, còn <b>${nf(cutN)}</b> ở bảng dưới</span>` : '',
     ].filter(Boolean).join('');
+
+    // Chú giải chỉ có nghĩa khi thật sự có nhiều màu trên biểu đồ — mọi nhóm
+    // đều sạch lỗi thì ba ô màu chỉ là nhiễu.
+    const seen = [...new Set(shown.map(health))];
+    $('legend').innerHTML = seen.length < 2 ? '' :
+      HEALTH.filter((h) => seen.includes(h.sev))
+        .map((h) => `<span><i style="background: var(--${h.sev})"></i>${esc(h.label)}</span>`).join('');
 
     $('chart').innerHTML = !shown.length
       ? '<div class="ok-empty dim">Không có dữ liệu nào trong khoảng này.</div>'
@@ -483,8 +532,8 @@
       const y = i * rowH + 5;
       const w = max > 0 ? Math.max(2, (r[me.key] / max) * track) : 2;
       s += `<text x="0" y="${y + 14}" font-size="13" fill="var(--ink-2)">${esc(cut(r.key, 34))}</text>`;
-      s += `<rect data-i="${i}" x="${LW}" y="${y + 3}" width="${w}" height="16" rx="5" fill="var(--series-1)"/>`;
-      s += `<rect x="${LW}" y="${y + 3}" width="${Math.min(w, 5)}" height="16" fill="var(--series-1)"/>`;
+      s += `<rect data-i="${i}" x="${LW}" y="${y + 3}" width="${w}" height="16" rx="5" fill="${fill(r)}"/>`;
+      s += `<rect x="${LW}" y="${y + 3}" width="${Math.min(w, 5)}" height="16" fill="${fill(r)}"/>`;
       s += `<text x="${LW + w + 9}" y="${y + 15}" font-size="12.5" font-weight="600" fill="var(--ink-2)" class="num">${esc(fmt(r[me.key], me.fmt))}</text>`;
     });
     return `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(me.label)}">${s}</svg>`;
@@ -508,8 +557,8 @@
     s += `<line x1="${PL}" x2="${W - PR}" y1="${y(0)}" y2="${y(0)}" stroke="var(--rule)"/>`;
     rows.forEach((r, i) => {
       const yT = y(r[me.key]), h = Math.max(2, y(0) - yT);
-      s += `<rect data-i="${i}" x="${cx(i) - bw / 2}" y="${yT}" width="${bw}" height="${h}" rx="5" fill="var(--series-1)"/>`;
-      s += `<rect x="${cx(i) - bw / 2}" y="${yT + Math.max(0, h - 5)}" width="${bw}" height="5" fill="var(--series-1)"/>`;
+      s += `<rect data-i="${i}" x="${cx(i) - bw / 2}" y="${yT}" width="${bw}" height="${h}" rx="5" fill="${fill(r)}"/>`;
+      s += `<rect x="${cx(i) - bw / 2}" y="${yT + Math.max(0, h - 5)}" width="${bw}" height="5" fill="${fill(r)}"/>`;
       // Nhãn trục X xoay 40° khi tên dài — nằm ngang thì chúng chồng lên nhau.
       const lb = esc(cut(r.key, 16));
       s += String(r.key).length > 6
@@ -535,7 +584,9 @@
     s += `<polygon points="${PL},${y(0)} ${pts} ${x(rows.length - 1)},${y(0)}" fill="var(--wash)"/>`;
     s += `<polyline points="${pts}" fill="none" stroke="var(--series-1)" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>`;
     rows.forEach((r, i) => {
-      s += `<circle cx="${x(i)}" cy="${y(r[me.key])}" r="4" fill="var(--card)" stroke="var(--series-1)" stroke-width="2.5"/>`;
+      // Đường giữ một màu để đọc được hình dạng xu hướng; CHẤM mới đổi màu theo
+      // sức khoẻ của ngày đó. Đổi màu cả đường thì nó vỡ thành từng khúc rời.
+      s += `<circle cx="${x(i)}" cy="${y(r[me.key])}" r="5" fill="var(--card)" stroke="${fill(r)}" stroke-width="3"/>`;
       // Vùng bắt chuột rộng hơn chấm — chấm 4px thì phải rê rất khéo mới trúng.
       s += `<circle data-i="${i}" cx="${x(i)}" cy="${y(r[me.key])}" r="13" fill="transparent"/>`;
       // Nhãn thưa dần khi nhiều điểm, để trục X không thành một vệt chữ đè nhau.
@@ -586,7 +637,7 @@
   // ── Nạp dữ liệu ────────────────────────────────────────────────────────
   async function load() {
     $('chart').innerHTML = '<div class="ok-empty dim">Đang tính…</div>';
-    const q = new URLSearchParams({ dim: state.dim, days: state.days, source: state.source, include: state.include });
+    const q = new URLSearchParams({ dim: state.dim, days: state.days, source: state.source, include: state.include, user: state.user });
     try {
       const r = await fetch('/api/explore?' + q, { cache: 'no-store' });
       const j = await r.json();
@@ -608,8 +659,8 @@
     // Bản xem trước tĩnh: chỉ có đúng một tập số đã nướng sẵn, nên các ô đổi
     // truy vấn phải khoá lại — để mở mà bấm vào thì trang im lặng không đổi gì.
     DATA = BAKED;
-    Object.assign(state, { dim: BAKED.dim, days: BAKED.days, source: BAKED.source, include: BAKED.include });
-    for (const el of [$('f-dim'), $('f-source'), $('f-include')]) el.disabled = true;
+    Object.assign(state, { dim: BAKED.dim, days: BAKED.days, source: BAKED.source, include: BAKED.include, user: BAKED.user || '' });
+    for (const el of [$('f-dim'), $('f-user'), $('f-source'), $('f-include')]) el.disabled = true;
     for (const b of [...$('f-days').children]) b.disabled = true;
     draw();
   } else {

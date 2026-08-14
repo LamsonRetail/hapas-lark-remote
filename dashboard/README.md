@@ -3,7 +3,13 @@
 Hai trang, cùng đọc `audit_logs` + `machines` trên Supabase:
 
 - **Bảng vận hành** (`/`) — canh gác, KPI, người dùng, chỗ cắm.
-- **Biểu đồ** (`/explore`) — chọn một cột để nhóm, một phép đo để vẽ.
+- **Biểu đồ** (`/explore`) — chọn một cột để nhóm, một phép đo để vẽ, lọc theo
+  một người gọi. Nhóm theo tool + lọc một người = "người này đã gọi tool nào".
+  Trạng thái nằm trên URL nên gửi được cho người khác bằng cách dán link.
+
+Cột và thanh tô theo tỉ lệ lỗi của chính nhóm đó — xanh lá không lỗi, hổ phách
+dưới 20%, đỏ từ 20% trở lên. Không phải màu trang trí: nó để "cái nào nhiều" và
+"cái nào đang hỏng" trả lời được trong cùng một cái liếc mắt.
 
 Gần như chỉ ĐỌC. Thao tác ghi duy nhất là ẩn một dòng khỏi mục "chỗ cắm"
 (xem bên dưới). Thu hồi truy cập vẫn dùng `npm run revoke` chạy tại chỗ.
