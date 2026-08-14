@@ -30,9 +30,17 @@ export async function sb(path, { method = 'GET', body, prefer, timeoutMs = 20000
     body: body === undefined ? undefined : JSON.stringify(body),
     signal: AbortSignal.timeout(timeoutMs),
   });
-  if (!r.ok) throw new Error(`${path.slice(0, 60)} → ${r.status} ${(await r.text()).slice(0, 160)}`);
-  // 204 (return=minimal) không có thân — đọc .json() sẽ ném.
-  return r.status === 204 ? null : r.json();
+  const text = await r.text();
+  if (!r.ok) throw new Error(`${path.slice(0, 60)} → ${r.status} ${text.slice(0, 160)}`);
+  /**
+   * `return=minimal` trả thân RỖNG, nhưng mã trạng thái thì tuỳ động từ:
+   * DELETE ra 204, còn POST ra **201**. Bản đầu chỉ chừa cửa cho 204 nên mọi
+   * lệnh insert đều vấp `r.json()` trên chuỗi rỗng và ném "Unexpected end of
+   * JSON input" — dòng ĐÃ ghi vào bảng nhưng endpoint báo 502 về cho trang.
+   * Kiểu hỏng tệ nhất: người dùng thấy báo lỗi nên bấm lại, trong khi việc đã
+   * xong từ lần đầu. Xét theo THÂN có rỗng không, đừng đoán theo mã.
+   */
+  return text ? JSON.parse(text) : null;
 }
 
 /** Thiếu cấu hình Supabase thì mọi endpoint đều vô nghĩa — chặn ngay đầu vào. */
