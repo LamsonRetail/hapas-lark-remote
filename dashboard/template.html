@@ -6,10 +6,6 @@
   <header>
     <div>
       <h1>Lark MCP remote</h1>
-      <nav class="nav">
-        <a href="/" aria-current="page">Bảng vận hành</a>
-        <a href="/explore">Biểu đồ</a>
-      </nav>
     </div>
     <div class="head-right">
       <div class="clock" id="clock"></div>
@@ -51,6 +47,64 @@
     <h2>Tool chưa ai gọi <span class="n" id="unused-n"></span></h2>
     <div class="tags" id="unused"></div>
   </section>
+
+  <!-- Canary: bảng chứ không phải biểu đồ. Dữ liệu ở đây là 12 dòng
+       tên-tool → đạt/hỏng, không có trục nào để vẽ; nhét vào biểu đồ chỉ làm
+       khó đọc hơn một cái bảng. -->
+  <div class="zone">Canary</div>
+  <section class="card pad">
+    <h2>Probe <span class="n" id="canary-n"></span></h2>
+    <div class="scroll"><table id="t-canary"></table></div>
+    <div id="canary-pager"></div>
+  </section>
+
+  <!-- Đào sâu: phần trước đây là trang /explore riêng -->
+  <div class="zone">Đào sâu</div>
+  <section class="card pad">
+    <div class="controls">
+      <div class="field">
+        <label for="f-dim">Nhóm theo</label>
+        <select id="f-dim"></select>
+      </div>
+      <div class="field">
+        <label for="f-measure">Đo bằng</label>
+        <select id="f-measure"></select>
+      </div>
+      <div class="field">
+        <label for="f-user">Lọc người</label>
+        <select id="f-user"></select>
+      </div>
+      <div class="field">
+        <label>Khoảng</label>
+        <div class="seg" id="f-days"></div>
+      </div>
+      <div class="field">
+        <label>Kiểu vẽ</label>
+        <div class="seg" id="f-kind"></div>
+      </div>
+      <label class="chk" for="f-include">
+        <input type="checkbox" id="f-include">
+        Gồm đăng nhập &amp; canary
+      </label>
+    </div>
+  </section>
+
+  <section class="card pad">
+    <h2 id="chart-title">Biểu đồ</h2>
+    <div class="summary" id="summary"></div>
+    <div class="legend" id="legend" style="margin-top:12px"></div>
+    <div id="chart"></div>
+  </section>
+
+  <section class="card pad">
+    <h2>
+      Số liệu <span class="n" id="rows-n"></span>
+      <span class="spacer"></span>
+      <button class="btn" id="f-csv">Tải CSV</button>
+    </h2>
+    <div class="scroll"><table class="wide" id="t-rows"></table></div>
+    <div id="rows-pager"></div>
+  </section>
 </div>
 
 <div id="tip" role="status"></div>
@@ -70,6 +124,10 @@
   });
 
   const BAKED = /*__DATA__*/null;
+  // Danh mục cột/phép đo của phần "Đào sâu", build.mjs nướng vào từ
+  // explore-schema.mjs — trang KHÔNG tự khai lại, nếu không nó sẽ chào một
+  // lựa chọn mà máy chủ từ chối.
+  const SCHEMA = /*__SCHEMA__*/null;
 
   const $ = (id) => document.getElementById(id);
   const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -336,6 +394,355 @@
   $('unused').innerHTML = DATA.unused.length
     ? DATA.unused.map((n) => `<span class="tag mono">${esc(n)}</span>`).join('')
     : '<div class="ok-empty"><span class="ic">●</span>Mọi tool đều đã có người gọi.</div>';
+
+  // ── canary ───────────────────────────────────────────────────────────
+  const cp = DATA.canaryProbes || [];
+  const drawCanary = () => {
+    const { from } = pageOf('canary', cp.length);
+    count('canary-n', cp.length);
+    $('t-canary').innerHTML = !cp.length
+      ? ''
+      : '<thead><tr><th>Tool</th><th>Kết quả</th><th class="r nw">Thời gian</th><th class="r nw">Mã lỗi</th></tr></thead><tbody>' +
+        cp.slice(from, from + PAGE_SIZE).map((p) => `<tr>
+          <td class="mono">${esc(p.name)}</td>
+          <td class="nw"><span class="pill sev-x" style="--sev: var(--${p.ok ? 'good' : 'critical'})"><span class="dot"></span>${p.ok ? 'đạt' : 'hỏng'}</span></td>
+          <td class="r num dim nw">${ms(p.ms)}</td>
+          <td class="r num nw${p.code ? '' : ' dim'}">${p.code ? esc(p.code) : '—'}</td>
+        </tr>`).join('') + '</tbody>';
+    if (!cp.length) {
+      $('t-canary').innerHTML = '<tbody><tr><td class="dim">Chưa có chi tiết probe — chờ nhịp tim canary kế tiếp.</td></tr></tbody>';
+    }
+    pager('canary-pager', 'canary', cp.length, drawCanary);
+  };
+  drawCanary();
+  }
+
+
+  /**
+   * ── Đào sâu ───────────────────────────────────────────────────────────
+   *
+   * Trước đây là trang /explore riêng. Gộp về đây vì hai trang cùng trả lời
+   * một câu hỏi trên cùng một tập dữ liệu, mà tách ra thì phải nhớ trang nào
+   * có gì và mọi con số phải đối chiếu bằng cách mở hai tab.
+   *
+   * Đóng gói trong một hàm riêng để không đụng tên với phần trên: nó có
+   * state, draw, EX của riêng nó. Dùng chung $, esc, nf, dt, ms,
+   * bindTip, pageOf, pager, PAGE_SIZE của trang.
+   *
+   * KHÔNG còn ô chọn nguồn: bảng này chỉ theo dõi MCP remote. Nguồn zip là
+   * client khác, ghi chung bảng audit nhưng không phải thứ trang này canh —
+   * để lẫn vào chỉ làm mọi con số phải kèm một câu hỏi "của bản nào?".
+   */
+  function initExplore() {
+  const cut = (s, n) => (String(s).length > n ? String(s).slice(0, n - 1) + '…' : String(s));
+  const DIMS = SCHEMA.DIMENSIONS, MEASURES = SCHEMA.MEASURES, WINDOWS = SCHEMA.WINDOWS;
+  const dimOf = (k) => DIMS.find((d) => d.key === k) || DIMS[0];
+
+  /**
+   * Đếm số giá trị khác nhau của CHÍNH cột đang nhóm thì nhóm nào cũng ra 1.
+   * Một cột toàn số 1 không sai, nhưng nó chiếm chỗ và bắt người đọc dừng lại
+   * để hiểu ra rằng nó không nói gì — bỏ hẳn khỏi ô chọn lẫn bảng.
+   */
+  const REDUNDANT = { user_name: 'users', tool_name: 'tools' };
+  const measuresFor = (dimKey) => MEASURES.filter((m) => m.key !== REDUNDANT[dimKey]);
+  const measureOf = (k) => measuresFor(state.dim).find((m) => m.key === k) || MEASURES[0];
+
+  const KINDS = [
+    { key: 'hbar', label: 'Thanh ngang' },
+    { key: 'bar', label: 'Cột' },
+    { key: 'line', label: 'Đường' },
+  ];
+
+  const fmt = (v, f) => {
+    if (v == null) return '—';
+    if (f === 'ms') return ms(v);
+    if (f === 'pct') return String(v).replace('.', ',') + '%';
+    return nf(v);
+  };
+
+  /**
+   * Màu của một cột = nhóm đó có CHẶN người dùng không, không phải màu trang trí.
+   *
+   * Trước đây mọi cột cùng một sắc chàm, nên biểu đồ "lượt gọi theo tool" chỉ
+   * trả lời được "cái nào nhiều" — muốn biết cái nào đang hỏng phải dò xuống
+   * bảng bên dưới.
+   *
+   * Tô theo lượt KHÔNG DÙNG ĐƯỢC, không theo lỗi thô: thiếu quyền và sai tham
+   * số là Lark đã trả lời, model đi tiếp được và người dùng không thấy gì. Tô
+   * đỏ cả chúng thì gần như cột nào cũng đỏ, và một màu đỏ luôn bật là màu đỏ
+   * không ai còn nhìn.
+   *
+   * Ba mức chứ không hai: 1 lượt hỏng trên 200 mà đỏ chót thì lần sau không ai
+   * tin màu đỏ nữa.
+   */
+  const HEALTH = [
+    { sev: 'good', label: 'Dùng được hết' },
+    { sev: 'warning', label: 'Dưới 20% không dùng được' },
+    { sev: 'critical', label: 'Từ 20% không dùng được' },
+  ];
+  const health = (r) => (!r.blocked ? 'good' : r.blockRate >= 20 ? 'critical' : 'warning');
+  const fill = (r) => `var(--${health(r)})`;
+
+  /** Trục tròn số: 2–5 vạch, không ra mấy con lẻ như 1.372,4. */
+  function scale(max) {
+    if (!(max > 0)) return { top: 1, step: 1 };
+    const mag = Math.pow(10, Math.floor(Math.log10(max)));
+    const r = max / mag;
+    const step = r > 5 ? mag : r > 2 ? mag / 2 : mag / 5;
+    return { top: Math.ceil(max / step) * step, step };
+  }
+
+  const DEFAULTS = { dim: 'tool_name', measure: 'calls', days: 30, kind: '', include: 'tools', user: '' };
+  const state = { ...DEFAULTS };
+  (function readUrl() {
+    const q = new URLSearchParams(location.search);
+    for (const k of Object.keys(DEFAULTS)) if (q.get(k)) state[k] = q.get(k);
+    state.days = WINDOWS.includes(+state.days) ? +state.days : 30;
+  })();
+
+  /** Chưa chọn kiểu thì đoán theo cột: trục thời gian vẽ đường, phân loại vẽ thanh. */
+  const kindNow = () => state.kind || (dimOf(state.dim).time ? 'line' : 'hbar');
+
+  function pushUrl() {
+    const q = new URLSearchParams();
+    for (const [k, v] of Object.entries(state)) if (v && v !== DEFAULTS[k]) q.set(k, v);
+    const s = q.toString();
+    history.replaceState(null, '', s ? '?' + s : location.pathname);
+  }
+
+  // ── Thanh chọn ─────────────────────────────────────────────────────────
+  function buildControls() {
+    $('f-dim').innerHTML = DIMS.map((d) => `<option value="${esc(d.key)}">${esc(d.label)}</option>`).join('');
+    $('f-days').innerHTML = WINDOWS.map((d) => `<button type="button" data-v="${d}">${d} ngày</button>`).join('');
+    $('f-kind').innerHTML = KINDS.map((k) => `<button type="button" data-v="${esc(k.key)}">${esc(k.label)}</button>`).join('');
+
+    $('f-include').checked = state.include === 'all';
+
+    // Đổi cột / khoảng / nguồn → phải gọi lại máy chủ. Đổi phép đo / kiểu vẽ →
+    // cùng một tập số, chỉ vẽ lại. Tách hai nhóm để thao tác thứ hai tức thì.
+    const reload = (patch) => { Object.assign(state, patch); pushUrl(); load(); };
+    const redraw = (patch) => { Object.assign(state, patch); pushUrl(); draw(); };
+
+    $('f-dim').addEventListener('change', (e) => reload({ dim: e.target.value, kind: '' }));
+    $('f-user').addEventListener('change', (e) => reload({ user: e.target.value }));
+    $('f-include').addEventListener('change', (e) => reload({ include: e.target.checked ? 'all' : 'tools' }));
+    $('f-days').addEventListener('click', (e) => { const b = e.target.closest('button'); if (b) reload({ days: +b.dataset.v }); });
+    $('f-measure').addEventListener('change', (e) => redraw({ measure: e.target.value }));
+    $('f-kind').addEventListener('click', (e) => { const b = e.target.closest('button'); if (b) redraw({ kind: b.dataset.v }); });
+
+    $('f-csv').addEventListener('click', downloadCsv);
+  }
+
+  function syncControls() {
+    // Danh sách người do máy chủ trả về theo từng cửa sổ thời gian — đổi sang
+    // 7 ngày thì người không hoạt động trong 7 ngày đó phải biến mất khỏi ô chọn.
+    const us = (EX && EX.users) || [];
+    $('f-user').innerHTML = '<option value="">Tất cả</option>' +
+      us.map((u) => `<option value="${esc(u)}">${esc(cut(u, 40))}</option>`).join('');
+    $('f-user').value = us.includes(state.user) ? state.user : '';
+
+    // Danh sách phép đo dựng lại theo cột đang nhóm, nên phải vẽ lại ô chọn
+    // mỗi lần — không thì mục vừa bị loại vẫn nằm đó và chọn được.
+    const av = measuresFor(state.dim);
+    if (!av.some((m) => m.key === state.measure)) state.measure = 'calls';
+    $('f-measure').innerHTML = av.map((m) => `<option value="${esc(m.key)}">${esc(m.label)}</option>`).join('');
+    $('f-dim').value = state.dim;
+    $('f-measure').value = state.measure;
+    for (const b of $('f-days').children) b.setAttribute('aria-pressed', String(+b.dataset.v === state.days));
+    for (const b of $('f-kind').children) b.setAttribute('aria-pressed', String(b.dataset.v === kindNow()));
+  }
+
+  // ── Vẽ ─────────────────────────────────────────────────────────────────
+  let EX = null;
+
+  // Trần số nhóm vẽ ra. 60 tool hay 40 người trên một biểu đồ là 40 nhãn không
+  // đọc nổi; phần còn lại vẫn nằm đủ ở bảng bên dưới, và dòng tóm tắt nói rõ
+  // đã cắt bao nhiêu — cắt âm thầm thì biểu đồ trông như đã bày hết.
+  const MAX_BARS = 25;
+
+  function draw() {
+    if (!EX) return;
+    syncControls();
+
+    const dim = dimOf(state.dim), me = measureOf(state.measure), kind = kindNow();
+    const val = (r) => r[me.key];
+    // p50/p95 null nghĩa là không có mẫu thời gian nào — bỏ hẳn khỏi biểu đồ,
+    // vẽ thành 0 sẽ đọc thành "nhanh tức thì".
+    let rows = EX.rows.filter((r) => val(r) != null && (me.zeroable || val(r) > 0));
+
+    // Trục thời gian giữ nguyên thứ tự; phân loại thì xếp theo chính phép đo
+    // đang xem — chọn "tỉ lệ lỗi" mà vẫn xếp theo lượt gọi là trả lời câu khác.
+    if (!dim.time) rows = rows.slice().sort((a, b) => val(b) - val(a));
+    const shown = rows.slice(0, MAX_BARS);
+    const cutN = rows.length - shown.length;
+
+    $('chart-title').textContent = `${me.label} theo ${dim.label.toLowerCase()}`
+      + (EX.user ? ` — chỉ ${cut(EX.user, 34)}` : '');
+    $('summary').innerHTML = [
+      `<span>Nguồn dữ liệu <b>${nf(EX.total)}</b> lượt gọi</span>`,
+      `<span>Gộp thành <b>${nf(EX.groups)}</b> nhóm</span>`,
+      `<span>Cửa sổ <b>${state.days}</b> ngày</span>`,
+      EX.user ? `<span>Đang lọc <b>1</b>/${nf(EX.users.length)} người</span>` : '',
+      cutN > 0 ? `<span>Biểu đồ hiện <b>${nf(shown.length)}</b> nhóm lớn nhất, còn <b>${nf(cutN)}</b> ở bảng dưới</span>` : '',
+    ].filter(Boolean).join('');
+
+    // Chú giải chỉ có nghĩa khi thật sự có nhiều màu trên biểu đồ — mọi nhóm
+    // đều sạch lỗi thì ba ô màu chỉ là nhiễu.
+    const seen = [...new Set(shown.map(health))];
+    $('legend').innerHTML = seen.length < 2 ? '' :
+      HEALTH.filter((h) => seen.includes(h.sev))
+        .map((h) => `<span><i style="background: var(--${h.sev})"></i>${esc(h.label)}</span>`).join('');
+
+    $('chart').innerHTML = !shown.length
+      ? '<div class="ok-empty dim">Không có dữ liệu nào trong khoảng này.</div>'
+      : kind === 'hbar' ? hbar(shown, me) : kind === 'bar' ? vbar(shown, me) : line(shown, me);
+
+    $('chart').querySelectorAll('[data-i]').forEach((el) => {
+      const r = shown[+el.dataset.i];
+      bindTip(el, `<b>${esc(cut(r.key, 40))}</b><br>${esc(me.label)}: ${esc(fmt(r[me.key], me.fmt))}<br>
+        ${nf(r.calls)} lượt · p95 ${ms(r.p95)}` +
+        (r.blocked ? `<br>${nf(r.blocked)} không dùng được (${String(r.blockRate).replace('.', ',')}%)` : ''));
+    });
+
+    drawTable(rows, me, dim);
+  }
+
+  /** Thanh ngang — mặc định cho cột phân loại, vì tên người và tên tool đều dài. */
+  function hbar(rows, me) {
+    const W = 1000, rowH = 30, LW = 268, PR = 92, H = rows.length * rowH + 6;
+    const max = Math.max(...rows.map((r) => r[me.key]), 0);
+    const track = W - LW - PR;
+    let s = '';
+    rows.forEach((r, i) => {
+      const y = i * rowH + 5;
+      const w = max > 0 ? Math.max(2, (r[me.key] / max) * track) : 2;
+      s += `<text x="0" y="${y + 14}" font-size="13" fill="var(--ink-2)">${esc(cut(r.key, 34))}</text>`;
+      s += `<rect data-i="${i}" x="${LW}" y="${y + 3}" width="${w}" height="16" rx="5" fill="${fill(r)}"/>`;
+      s += `<rect x="${LW}" y="${y + 3}" width="${Math.min(w, 5)}" height="16" fill="${fill(r)}"/>`;
+      s += `<text x="${LW + w + 9}" y="${y + 15}" font-size="12.5" font-weight="600" fill="var(--ink-2)" class="num">${esc(fmt(r[me.key], me.fmt))}</text>`;
+    });
+    return `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(me.label)}">${s}</svg>`;
+  }
+
+  /** Cột dọc — hợp với ngày/giờ, ít nhóm. */
+  function vbar(rows, me) {
+    const H = 300, PL = 62, PR = 10, PT = 20, PB = 46;
+    const band = Math.max(34, Math.min(90, 900 / rows.length));
+    const W = Math.max(360, PL + band * rows.length + PR);
+    const { top, step } = scale(Math.max(...rows.map((r) => r[me.key]), 0));
+    const y = (v) => PT + (H - PT - PB) * (1 - v / top);
+    const cx = (i) => PL + band * (i + 0.5);
+    const bw = Math.min(38, band * 0.55);
+
+    let s = '';
+    for (let t = 0; t <= top + 1e-9; t += step) {
+      s += `<line x1="${PL}" x2="${W - PR}" y1="${y(t)}" y2="${y(t)}" stroke="var(--grid)"/>`;
+      s += `<text x="${PL - 9}" y="${y(t) + 4}" text-anchor="end" font-size="11" fill="var(--ink-3)" class="num">${esc(fmt(t, me.fmt))}</text>`;
+    }
+    s += `<line x1="${PL}" x2="${W - PR}" y1="${y(0)}" y2="${y(0)}" stroke="var(--rule)"/>`;
+    rows.forEach((r, i) => {
+      const yT = y(r[me.key]), h = Math.max(2, y(0) - yT);
+      s += `<rect data-i="${i}" x="${cx(i) - bw / 2}" y="${yT}" width="${bw}" height="${h}" rx="5" fill="${fill(r)}"/>`;
+      s += `<rect x="${cx(i) - bw / 2}" y="${yT + Math.max(0, h - 5)}" width="${bw}" height="5" fill="${fill(r)}"/>`;
+      // Nhãn trục X xoay 40° khi tên dài — nằm ngang thì chúng chồng lên nhau.
+      const lb = esc(cut(r.key, 16));
+      s += String(r.key).length > 6
+        ? `<text x="${cx(i)}" y="${H - PB + 18}" font-size="11" fill="var(--ink-3)" text-anchor="end" transform="rotate(-40 ${cx(i)} ${H - PB + 18})">${lb}</text>`
+        : `<text x="${cx(i)}" y="${H - PB + 18}" font-size="11.5" fill="var(--ink-3)" text-anchor="middle">${lb}</text>`;
+    });
+    return `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMinYMid meet" role="img" aria-label="${esc(me.label)}" style="max-width:${W}px">${s}</svg>`;
+  }
+
+  /** Đường — mặc định cho trục thời gian, vì hình dạng xu hướng mới là thứ cần đọc. */
+  function line(rows, me) {
+    const W = 1000, H = 300, PL = 62, PR = 16, PT = 20, PB = 42;
+    const { top, step } = scale(Math.max(...rows.map((r) => r[me.key]), 0));
+    const y = (v) => PT + (H - PT - PB) * (1 - v / top);
+    const x = (i) => (rows.length === 1 ? (PL + W - PR) / 2 : PL + ((W - PL - PR) * i) / (rows.length - 1));
+
+    let s = '';
+    for (let t = 0; t <= top + 1e-9; t += step) {
+      s += `<line x1="${PL}" x2="${W - PR}" y1="${y(t)}" y2="${y(t)}" stroke="var(--grid)"/>`;
+      s += `<text x="${PL - 9}" y="${y(t) + 4}" text-anchor="end" font-size="11" fill="var(--ink-3)" class="num">${esc(fmt(t, me.fmt))}</text>`;
+    }
+    const pts = rows.map((r, i) => `${x(i)},${y(r[me.key])}`).join(' ');
+    s += `<polygon points="${PL},${y(0)} ${pts} ${x(rows.length - 1)},${y(0)}" fill="var(--wash)"/>`;
+    s += `<polyline points="${pts}" fill="none" stroke="var(--series-1)" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>`;
+    rows.forEach((r, i) => {
+      // Đường giữ một màu để đọc được hình dạng xu hướng; CHẤM mới đổi màu theo
+      // sức khoẻ của ngày đó. Đổi màu cả đường thì nó vỡ thành từng khúc rời.
+      s += `<circle cx="${x(i)}" cy="${y(r[me.key])}" r="5" fill="var(--card)" stroke="${fill(r)}" stroke-width="3"/>`;
+      // Vùng bắt chuột rộng hơn chấm — chấm 4px thì phải rê rất khéo mới trúng.
+      s += `<circle data-i="${i}" cx="${x(i)}" cy="${y(r[me.key])}" r="13" fill="transparent"/>`;
+      // Nhãn thưa dần khi nhiều điểm, để trục X không thành một vệt chữ đè nhau.
+      const every = Math.ceil(rows.length / 14);
+      if (i % every === 0 || i === rows.length - 1) {
+        s += `<text x="${x(i)}" y="${H - PB + 20}" text-anchor="middle" font-size="11" fill="var(--ink-3)">${esc(cut(r.key, 10))}</text>`;
+      }
+    });
+    return `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(me.label)}">${s}</svg>`;
+  }
+
+  // ── Bảng số ────────────────────────────────────────────────────────────
+  function drawTable(rows, me, dim) {
+    $('rows-n').textContent = rows.length ? `· ${nf(rows.length)} nhóm` : '';
+    const cls = dim.mono ? 'mono' : '';
+    const MS = measuresFor(dim.key);
+    // Nhóm theo tool ra 39 dòng, theo giờ ra 24 — đổ hết xuống thì bảng dài
+    // gấp ba biểu đồ ngay trên nó. Phân trang dùng chung với bảng người.
+    const { from: exFrom } = pageOf('exrows', rows.length);
+    $('t-rows').innerHTML =
+      `<thead><tr><th>${esc(dim.label)}</th>` +
+      MS.map((m) => `<th class="r nw"${m.key === me.key ? ' style="color:var(--series-1)"' : ''}>${esc(m.label)}</th>`).join('') +
+      '<th class="r nw">Gần nhất</th></tr></thead><tbody>' +
+      rows.slice(exFrom, exFrom + PAGE_SIZE).map((r) => `<tr><td class="${cls}">${esc(cut(r.key, 48))}</td>` +
+        // Cột đang được vẽ thì đậm lên; các cột còn lại mờ đi. Bảng bảy cột mà
+        // cùng một sắc độ thì không ai tìm ra cột mình vừa chọn ở biểu đồ trên.
+        MS.map((m) => m.key === me.key
+          ? `<td class="r num nw" style="font-weight:660">${esc(fmt(r[m.key], m.fmt))}</td>`
+          : `<td class="r num nw dim">${esc(fmt(r[m.key], m.fmt))}</td>`).join('') +
+        `<td class="r num dim nw">${dt(r.last)}</td></tr>`).join('') +
+      '</tbody>';
+    pager('rows-pager', 'exrows', rows.length, () => drawTable(rows, me, dim));
+  }
+
+  function downloadCsv() {
+    if (!EX) return;
+    const dim = dimOf(state.dim), MS = measuresFor(dim.key);
+    const head = [dim.label, ...MS.map((m) => m.label), 'Gần nhất'];
+    // Bọc mọi ô trong ngoặc kép: tên người có dấu phẩy, và Excel sẽ tách nhầm cột.
+    const q = (v) => '"' + String(v ?? '').replace(/"/g, '""') + '"';
+    const csv = [head.map(q).join(','), ...EX.rows.map((r) =>
+      [r.key, ...MS.map((m) => r[m.key] ?? ''), r.last || ''].map(q).join(','))].join('\r\n');
+    // BOM ﻿: thiếu nó là Excel mở ra tiếng Việt thành ký tự rác.
+    const url = URL.createObjectURL(new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' }));
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `mcp-${state.dim}-${state.days}d.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  // ── Nạp dữ liệu ────────────────────────────────────────────────────────
+  async function load() {
+    $('chart').innerHTML = '<div class="ok-empty dim">Đang tính…</div>';
+    const q = new URLSearchParams({ dim: state.dim, days: state.days, include: state.include, user: state.user });
+    try {
+      const r = await fetch('/api/explore?' + q, { cache: 'no-store' });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j.error || 'HTTP ' + r.status);
+      EX = j;
+      draw();
+    } catch (e) {
+      $('chart').innerHTML = `<div class="ok-empty" style="color:var(--critical)">Không tải được dữ liệu: ${esc(e.message)}</div>`;
+    }
+  }
+  // buildControls dựng tuỳ chọn cho f-dim/f-days/f-kind VÀ gắn sự kiện; thiếu
+  // nó thì ô chọn rỗng và mọi thao tác im lặng không làm gì. Phải chạy TRƯỚC
+  // syncControls, vì syncControls đọc lại giá trị đang chọn của chính chúng.
+  buildControls();
+  syncControls();
+  load();
   }
 
   // ── Đồng hồ real-time (góc trên) ─────────────────────────────────────
@@ -355,9 +762,12 @@
   };
 
   (async function boot() {
-    if (BAKED) { render(BAKED); return; }
+    // Phần "Đào sâu" tự gọi /api/explore riêng, nên khởi động nó ĐỘC LẬP với
+    // phần trên: một bên hỏng thì bên kia vẫn hiện số.
+    if (BAKED) { render(BAKED); initExplore(); return; }
     try {
       render(await fetchData());
+      initExplore();
     } catch (e) {
       document.querySelector('.wrap').insertAdjacentHTML('afterbegin',
         `<div class="card pad" style="border-color: var(--critical)">Không tải được dữ liệu: ${esc(e.message)}</div>`);

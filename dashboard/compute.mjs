@@ -175,6 +175,19 @@ export async function computeDashboard({ sb, toolNames, appId, windowDays = 30 }
   const durs = calls.map((r) => r.duration_ms).filter((x) => x != null).sort((a, b) => a - b);
   const canary = canaryRow[0] || null;
   const parse = (s) => { try { return JSON.parse(s); } catch { return {}; } };
+  const canaryArgs = canary ? parse(canary.args) : {};
+
+  /**
+   * Chi tiết từng probe của lượt canary gần nhất. Dòng nhịp tim ghi mỗi ngày
+   * một lần nên bảng này có thể cũ tới 24h — chấp nhận được, vì dải canh gác
+   * ngay trên đã nói rõ nhịp tim cách đây bao lâu.
+   *
+   * Mảng gọn `[tên, ok, ms, mã]` do canary.js ghi; bản cũ chưa có thì `p`
+   * không tồn tại và bảng chỉ trống chứ không gãy.
+   */
+  const canaryProbes = (canaryArgs.p || []).map(([name, ok, ms, code]) => ({
+    name, ok: ok === 1, ms, code: code || null,
+  }));
   // Sự kiện xác thực đếm thẳng từ raw trong cửa sổ (trước đây đọc view rollup
   // v_daily_auth). '__auth.' dài 7 ký tự — cắt để lấy tên sự kiện.
   const authCounts = new Map();
@@ -210,7 +223,9 @@ export async function computeDashboard({ sb, toolNames, appId, windowDays = 30 }
       toolsRetired: retired,
     },
     watchdog: {
-      canary: canary && { at: canary.created_at, ok: canary.ok, ...parse(canary.args) },
+      // `p` (chi tiết từng probe) tách ra `canaryProbes` ở dưới — dải canh gác
+      // chỉ cần hai con số tổng, không cần chở cả mảng.
+      canary: canary && { at: canary.created_at, ok: canary.ok, probes: canaryArgs.probes, failing: canaryArgs.failing },
       session: sessionRow[0] ? { at: sessionRow[0].created_at, ...sessionRow[0].state } : null,
       ingest: { at: raw.length ? raw[raw.length - 1].created_at : null },
     },
@@ -229,6 +244,7 @@ export async function computeDashboard({ sb, toolNames, appId, windowDays = 30 }
     // đó vốn là hai lát cắt của cùng một tập người, đặt cạnh nhau chỉ khiến
     // phải đối chiếu bằng mắt xem dòng nào là ai.
     people,
+    canaryProbes,
     auth: [...authCounts.entries()].map(([event, n]) => ({ event, n })).sort((a, b) => b.n - a.n),
   };
 }

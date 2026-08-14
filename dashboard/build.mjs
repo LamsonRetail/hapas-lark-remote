@@ -6,7 +6,6 @@ import { sbFetch } from '../src/supabase.js';
 import { TOOLS } from '../src/tools/index.js';
 import { computeDashboard } from './compute.mjs';
 import { DIMENSIONS, MEASURES, WINDOWS } from './explore-schema.mjs';
-import { EXPLORE_COLS, aggregate } from './explore-compute.mjs';
 
 /**
  * Dựng các trang dashboard.
@@ -76,31 +75,17 @@ function build(tplFile, { data = null, extra = {} } = {}) {
   return data === null ? html : html.replace('/*__DATA__*/null', () => JSON.stringify(data));
 }
 
-// ── Bảng vận hành ──────────────────────────────────────────────────────
-const data = await computeDashboard({ sb, toolNames: TOOLS.map((t) => t.name), appId: config.appId });
-
-write('preview.html', build('template.html', { data }));
-write('index.html', DOCTYPE + build('template.html'));
-
-// ── Trang biểu đồ ──────────────────────────────────────────────────────
+// ── MỘT trang duy nhất ─────────────────────────────────────────────────
+// Trước đây là hai: `/` và `/explore`. Chúng trả lời cùng một câu hỏi trên
+// cùng một tập dữ liệu, nên tách ra chỉ tổ phải nhớ trang nào có gì.
+//
 // Danh mục cột nướng vào trang để ô chọn không phải khai lại — lệch một cái
 // tên là trang chào lựa chọn mà máy chủ từ chối.
 const SCHEMA = { DIMENSIONS, MEASURES, WINDOWS };
+const data = await computeDashboard({ sb, toolNames: TOOLS.map((t) => t.name), appId: config.appId });
 
-const EX_DAYS = 30, EX_DIM = 'tool_name';
-const since = new Date(Date.now() - EX_DAYS * 86400000).toISOString();
-const exRows = [];
-for (let off = 0; off < 200000; off += 1000) {
-  const chunk = await sb(
-    `audit_logs?created_at=gte.${since}&source=eq.url&select=${EXPLORE_COLS.join(',')}&order=created_at.asc&limit=1000&offset=${off}`,
-  );
-  exRows.push(...chunk);
-  if (chunk.length < 1000) break;
-}
-const exData = { days: EX_DAYS, source: 'url', ...aggregate({ rows: exRows, dim: EX_DIM }) };
-
-write('explore-preview.html', build('explore-template.html', { data: exData, extra: { SCHEMA } }));
-write('explore.html', DOCTYPE + build('explore-template.html', { extra: { SCHEMA } }));
+write('preview.html', build('template.html', { data, extra: { SCHEMA } }));
+write('index.html', DOCTYPE + build('template.html', { extra: { SCHEMA } }));
 
 // Hàm serverless không import được src/ (thiếu biến môi trường của Lark), nên
 // danh sách tool phải đi kèm dưới dạng dữ liệu.
@@ -117,5 +102,4 @@ const nhieuClient = data.people.filter((p) => p.clients.length > 2);
 if (nhieuClient.length) {
   console.log(`nghi còn trùng : ${nhieuClient.length} người có >2 ứng dụng — chạy supabase/machines-dedup.sql`);
 }
-console.log(`biểu đồ       : ${exData.total} lượt → ${exData.groups} nhóm theo ${EX_DIM}`);
-console.log('→ preview.html + explore-preview.html + index.html + explore.html + tools.json');
+console.log('→ preview.html + index.html + tools.json');

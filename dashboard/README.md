@@ -1,11 +1,10 @@
 # Dashboard
 
-Hai trang, cùng đọc `audit_logs` + `machines` trên Supabase:
-
-- **Bảng vận hành** (`/`) — canh gác, KPI, người dùng, chỗ cắm.
-- **Biểu đồ** (`/explore`) — chọn một cột để nhóm, một phép đo để vẽ, lọc theo
-  một người gọi. Nhóm theo tool + lọc một người = "người này đã gọi tool nào".
-  Trạng thái nằm trên URL nên gửi được cho người khác bằng cách dán link.
+MỘT trang duy nhất: canh gác, KPI, xu hướng, bảng người, bảng canary, và khu
+"Đào sâu" để chọn cột nhóm × phép đo × kiểu vẽ. Trước đây tách làm hai ( và
+) — chúng trả lời cùng một câu hỏi trên cùng một tập dữ liệu, tách ra
+chỉ tổ phải nhớ trang nào có gì. Trạng thái khu Đào sâu nằm trên URL nên gửi
+được cho người khác bằng cách dán link.
 
 ## Bảng này KHÔNG đếm lỗi thô
 

@@ -114,6 +114,18 @@ async function runOnce() {
   const probes = await allProbes(api, state);
   const startedRun = Date.now();
   let failing = 0;
+  /**
+   * Kết quả TỪNG probe của lượt này, để dashboard vẽ được bảng canary.
+   *
+   * Trước đây chỉ có hai con số tổng (`probes`, `failing`) nên bảng nói được
+   * "12 probe, 0 lỗi" mà không nói được 12 cái đó là gì — nhìn vào không biết
+   * canary có thật sự chạm tới thứ mình quan tâm hay không.
+   *
+   * Mảng thay vì object, và tên khoá một ký tự: `args` bị cắt ở 2000 ký tự và
+   * một chuỗi JSON cắt giữa chừng thì mất CẢ dòng chứ không mất phần đuôi.
+   * Dạng gọn này để 12 probe ở khoảng 400 ký tự, còn dư chỗ khi thêm probe.
+   */
+  const snapshot = [];
 
   for (const { name, args, run } of probes) {
     const started = Date.now();
@@ -127,6 +139,8 @@ async function runOnce() {
       err = e.message;
       code = e.code;
     }
+
+    snapshot.push([name, ok ? 1 : 0, Date.now() - started, code || null]);
 
     const prev = state[name] || { fails: 0, alerted: false };
     // Lượt xanh nối tiếp lượt xanh không nói thêm được gì; lượt xanh ngay sau
@@ -168,7 +182,7 @@ async function runOnce() {
       userName: 'canary',
       clientId: 'canary',
       toolName: 'canary_heartbeat',
-      args: { probes: probes.length, failing },
+      args: { probes: probes.length, failing, p: snapshot },
       ok: failing === 0,
       errorMsg: failing ? `${failing}/${probes.length} probe đang lỗi` : null,
       durationMs: Date.now() - startedRun,
