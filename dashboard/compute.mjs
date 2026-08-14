@@ -1,4 +1,3 @@
-import crypto from 'node:crypto';
 import { impactedSet } from './impact.mjs';
 
 /**
@@ -18,10 +17,6 @@ export const SKIP_CLIENTS = new Set(['local-admin', 'canary', 'revoke-test-a']);
 const pct = (n, d) => (d ? +((n / d) * 100).toFixed(1) : 0);
 const quant = (s, q) => (s.length ? s[Math.min(s.length - 1, Math.floor(s.length * q))] : null);
 
-/** Cùng công thức machine_id mà server dùng để ghi bảng `machines`. */
-const machineIdFor = (openId, clientId) =>
-  'url-' + crypto.createHash('sha256').update(`${openId}|${clientId}`).digest('hex').slice(0, 12);
-
 export async function computeDashboard({ sb, toolNames, appId, windowDays = 30 }) {
   const page = async (p) => {
     const out = [];
@@ -39,27 +34,30 @@ export async function computeDashboard({ sb, toolNames, appId, windowDays = 30 }
   // v_session_health giữ lại vì đó là chỗ DUY NHẤT có hạn refresh token (nằm
   // trong tokens.json mã hoá, Supabase không có đường nào khác chạm tới).
   /**
-   * Bảng `dashboard_hidden` là tuỳ chọn: chưa chạy supabase/dashboard-hidden.sql
-   * thì PostgREST trả 404 và cả trang phải chết theo — mà thứ chết đi chỉ là
-   * một danh sách để ẩn bớt dòng. Nuốt lỗi, coi như chưa ai ẩn gì.
+   * `token_expires_at` chỉ có sau khi chạy supabase/machines-dedup.sql.
+   *
+   * PostgREST KHÔNG bỏ qua cột lạ trong `select` — nó trả 400 và cả trang chết
+   * theo. (Đã thử: tưởng nó bỏ qua, hoá ra không.) Nên hỏi kèm cột đó trước,
+   * hụt thì hỏi lại không kèm: mất một cột còn hơn mất cả trang. Cùng nguyên
+   * tắc với DEGRADABLE ở phía server.
    */
-  const readHidden = async () => {
+  const MACHINE_COLS = 'machine_id,username,user_id,client_app,status,installed_at,last_seen';
+  const readMachines = async () => {
+    const q = (cols) => page(`machines?channel=eq.mcp%20remote&select=${cols}&order=last_seen.desc`);
     try {
-      return await sb('dashboard_hidden?select=machine_id,label,hidden_at&order=hidden_at.desc');
+      return await q(`${MACHINE_COLS},token_expires_at`);
     } catch {
-      return [];
+      return q(MACHINE_COLS);
     }
   };
 
-  const [raw, machines, canaryRow, sessionRow, hiddenRows] = await Promise.all([
+  const [raw, machines, canaryRow, sessionRow] = await Promise.all([
     // `args` chỉ để impact.mjs nhận ra tham số trỏ ra ngoài Lark. Nó KHÔNG đi
     // xuống trình duyệt — computeDashboard chỉ trả về số đã gộp.
     page(`audit_logs?source=eq.url&created_at=gte.${since}&select=created_at,tool_name,user_name,open_id,client_id,ok,duration_ms,lark_code,error_msg,args&order=created_at.asc`),
-    // `display_name` chở theo client_id — xem ghi chú ở phần dựng chỗ cắm.
-    page('machines?channel=eq.mcp%20remote&select=machine_id,username,user_id,client_app,display_name,status,installed_at,last_seen&order=last_seen.desc'),
+    readMachines(),
     sb('audit_logs?source=eq.url&tool_name=eq.canary_heartbeat&select=created_at,ok,args&order=created_at.desc&limit=1'),
     sb('v_session_health?select=created_at,state&limit=1'),
-    readHidden(),
   ]);
 
   const calls = raw.filter(
@@ -116,92 +114,63 @@ export async function computeDashboard({ sb, toolNames, appId, windowDays = 30 }
   const usedCurrent = all.filter((n) => toolMap.has(n)).length;
   const retired = [...toolMap.keys()].filter((n) => !all.includes(n)).sort();
 
-  // ── theo người ──
-  const userMap = new Map();
-  for (const r of calls) {
-    const k = r.user_name || '(không rõ)';
-    const e = userMap.get(k) || { name: k, calls: 0, blocked: 0, last: '', tools: new Set() };
-    e.calls++;
-    if (isBlocked(r)) e.blocked++;
-    if (r.created_at > e.last) e.last = r.created_at;
-    e.tools.add(r.tool_name);
-    userMap.set(k, e);
-  }
-  const users = [...userMap.values()]
-    .map((u) => ({ name: u.name, calls: u.calls, blocked: u.blocked, last: u.last, tools: u.tools.size }))
-    .sort((a, b) => b.calls - a.calls);
-
   /**
-   * Chỗ cắm — HỢP của hai nguồn, khoá chung là `machine_id`:
+   * MỘT bảng, khoá là NGƯỜI (`open_id`) — hợp của hai nguồn:
    *
-   *   audit_logs  → ai đã GỌI tool (có open_id + client_id, băm ra machine_id)
-   *   machines    → ai đã ĐĂNG NHẬP (machine_id là khoá chính sẵn)
+   *   audit_logs  → ai đã GỌI tool     (open_id)
+   *   machines    → ai đã ĐĂNG NHẬP    (user_id) + họ cắm bằng ứng dụng gì
    *
-   * Trước đây chỉ dựng từ audit, nên người vừa cắm connector xong mà chưa gọi
-   * tool nào thì không tồn tại trên bảng — đúng lúc cần nhìn nhất (vừa phát
-   * link cho phòng ban, muốn biết ai đã cắm được) thì bảng lại trống. Đã đo:
-   * 11/24 dòng `machines` không hiện ra.
-   *
-   * Chiều ngược lại vẫn phải giữ: dòng audit cũ hơn ngày có `machines` thì
-   * không có dòng machines nào để ghép — đó là các dòng 'không rõ'.
+   * Trước đây khoá là (người, client_id) nên có hai bệnh cùng lúc: người vừa
+   * cắm mà chưa gọi tool thì không hiện, còn người cắm đi cắm lại thì đẻ ra
+   * mỗi lần một dòng (đo thật: 6 dòng cho 2 chỗ cắm). Nay `client_id` không
+   * còn là khoá của bất cứ thứ gì — nó đổi mỗi lần đăng ký DCR nên không phải
+   * danh tính. Ứng dụng đã dùng thành DANH SÁCH CON trong dòng của người đó.
    */
-  const connMap = new Map();
-
-  const touch = (mid, seed) => {
-    const c = connMap.get(mid) || {
-      machineId: mid, openId: null, clientId: null, user: null,
-      calls: 0, last: null, app: null, status: null, installed: null, seen: null,
-    };
-    connMap.set(mid, Object.assign(c, seed));
-    return c;
+  const pmap = new Map();
+  const person = (openId) => {
+    if (!pmap.has(openId)) {
+      pmap.set(openId, {
+        openId, name: null, clients: [],
+        calls: 0, blocked: 0, tools: new Set(), last: null,
+        seen: null, installed: null, tokenExpires: null,
+      });
+    }
+    return pmap.get(openId);
   };
 
   for (const r of calls) {
-    if (!r.open_id || !r.client_id) continue;
-    const c = touch(machineIdFor(r.open_id, r.client_id), {});
-    c.openId = r.open_id;
-    c.clientId = r.client_id;
-    c.user = r.user_name || c.user;
-    c.calls++;
-    if (!c.last || r.created_at > c.last) c.last = r.created_at;
+    if (!r.open_id) continue;
+    const p = person(r.open_id);
+    p.name = r.user_name || p.name;
+    p.calls++;
+    if (isBlocked(r)) p.blocked++;
+    p.tools.add(r.tool_name);
+    if (!p.last || r.created_at > p.last) p.last = r.created_at;
   }
-
-  /**
-   * `machines` không có cột client_id — server băm nó vào `machine_id`, không
-   * đảo ngược được. Nhưng `display_name` do machines.js dựng theo đúng khuôn
-   * "tên — app <client_id> (url)", nên bóc lại được từ đó. Bóc hụt thì để null
-   * và bảng hiện '—': thà thiếu một nhãn còn hơn giấu cả một chỗ cắm.
-   */
-  const clientIdFromLabel = (s) => (String(s || '').match(/\s(\S+)\s+\(url\)\s*$/) || [])[1] || null;
 
   for (const m of machines) {
-    const c = touch(m.machine_id, {});
-    c.openId = c.openId || m.user_id || null;
-    c.clientId = c.clientId || clientIdFromLabel(m.display_name);
-    c.user = c.user || m.username || null;
+    if (!m.user_id) continue;
+    const p = person(m.user_id);
+    p.name = p.name || m.username || null;
+    p.clients.push({ app: m.client_app || 'connector', status: m.status, installed: m.installed_at, seen: m.last_seen });
     // `last` (audit) và `seen` (machines) trả lời hai câu khác nhau: lần cuối
-    // GỌI tool, và lần cuối server CHẠM vào chỗ cắm này — xoay token cũng tính.
-    // Để cạnh nhau thì chênh lệch tự tố cáo: còn nối mà lâu không gọi là bình
-    // thường; gọi gần đây mà lâu không thấy là phiên đã chết.
-    c.app = m.client_app || c.app;
-    c.status = m.status || c.status;
-    c.installed = m.installed_at || c.installed;
-    c.seen = m.last_seen || c.seen;
+    // GỌI tool, và lần cuối server CHẠM vào người này — xoay token cũng tính.
+    if (!p.seen || String(m.last_seen) > p.seen) p.seen = m.last_seen;
+    if (!p.installed || String(m.installed_at) < p.installed) p.installed = m.installed_at;
+    // Token thuộc về người, mọi dòng của họ mang cùng một hạn — lấy cái xa nhất
+    // để một dòng cũ chưa kịp cập nhật không kéo countdown xuống oan.
+    if (m.token_expires_at && (!p.tokenExpires || m.token_expires_at > p.tokenExpires)) p.tokenExpires = m.token_expires_at;
   }
 
-  const hiddenIds = new Set(hiddenRows.map((h) => h.machine_id));
-  const allConnectors = [...connMap.values()]
-    .map((c) => ({ ...c, status: c.status || 'không rõ' }))
+  const people = [...pmap.values()]
+    .map((p) => ({
+      ...p,
+      tools: p.tools.size,
+      clients: p.clients.sort((a, b) => String(b.seen || '').localeCompare(String(a.seen || ''))),
+    }))
     // Chưa gọi lần nào thì xếp theo lần thấy gần nhất, không rơi hết xuống đáy
     // chung một cục — người vừa cắm xong phải nổi lên trên.
     .sort((a, b) => b.calls - a.calls || String(b.seen || '').localeCompare(String(a.seen || '')));
-
-  const connectors = allConnectors.filter((c) => !hiddenIds.has(c.machineId));
-  // Đã ẩn thì vẫn gửi kèm, để trang có cái mà "hiện lại" — ẩn một chiều không
-  // hoàn tác được thì chẳng khác gì xoá, mà xoá là thứ ta cố tình tránh.
-  const hidden = allConnectors
-    .filter((c) => hiddenIds.has(c.machineId))
-    .map((c) => ({ ...c, hiddenAt: hiddenRows.find((h) => h.machine_id === c.machineId)?.hidden_at || null }));
 
   const durs = calls.map((r) => r.duration_ms).filter((x) => x != null).sort((a, b) => a - b);
   const canary = canaryRow[0] || null;
@@ -230,12 +199,12 @@ export async function computeDashboard({ sb, toolNames, appId, windowDays = 30 }
       blockRate: pct(blockedRows.size, calls.length),
       p50: quant(durs, 0.5),
       p95: quant(durs, 0.95),
-      users: users.length,
+      users: people.filter((p) => p.calls).length,
       // Đã cắm ≠ đã gọi. `users` đếm người có lượt gọi trong cửa sổ; `connected`
       // đếm người đã đăng nhập được, kể cả chưa gọi tool nào. Chênh lệch giữa
       // hai số chính là "phát link rồi mà chưa ai dùng" — số cần biết nhất
       // trong lúc triển khai cho phòng ban mới.
-      connected: new Set(connectors.map((c) => c.openId).filter(Boolean)).size,
+      connected: people.filter((p) => p.clients.length).length,
       toolsUsed: usedCurrent,
       toolsTotal: all.length,
       toolsRetired: retired,
@@ -256,9 +225,10 @@ export async function computeDashboard({ sb, toolNames, appId, windowDays = 30 }
     // `risky`/`healed`/`codes`/`noResponse` cũ cũng đã bỏ: liệt kê lỗi thô,
     // không trang nào dùng, mà vẫn đẩy error_msg kèm id tài liệu xuống trình duyệt.
     unused,
-    users,
-    connectors,
-    hidden,
+    // MỘT bảng người thay cho hai bảng "người dùng" + "chỗ cắm" cũ. Hai bảng
+    // đó vốn là hai lát cắt của cùng một tập người, đặt cạnh nhau chỉ khiến
+    // phải đối chiếu bằng mắt xem dòng nào là ai.
+    people,
     auth: [...authCounts.entries()].map(([event, n]) => ({ event, n })).sort((a, b) => b.n - a.n),
   };
 }

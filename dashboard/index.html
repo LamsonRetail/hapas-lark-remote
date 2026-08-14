@@ -239,6 +239,16 @@
    "khoảng thời gian này không có dữ liệu". */
 .summary { display: flex; flex-wrap: wrap; gap: 20px; font-size: 13px; color: var(--ink-2); }
 .summary b { color: var(--ink); font-weight: 660; font-variant-numeric: tabular-nums; }
+
+/* ── Chuyển trang dưới đáy bảng ──────────────────────────────────────────
+   Chỉ hiện khi bảng thật sự tràn — "Trang 1/1" là một dòng chữ không nói gì. */
+.pager { display: flex; align-items: center; justify-content: flex-end; gap: 14px;
+  margin-top: 12px; padding-top: 11px; border-top: 1px solid var(--grid); font-size: 13px; }
+.pager b { font-variant-numeric: tabular-nums; color: var(--ink); }
+
+/* Danh sách ứng dụng trong MỘT ô: xuống dòng thay vì kéo dài cột. Cao quá thì
+   tự cuộn — một người cắm nhiều chỗ không được phép làm cả hàng cao gấp ba. */
+.chips { display: flex; flex-wrap: wrap; gap: 5px; max-height: 52px; overflow-y: auto; }
 </style>
 
 <div class="wrap">
@@ -276,24 +286,19 @@
 
   <!-- Tầng 4: sử dụng -->
   <div class="zone">Sử dụng</div>
-  <section class="g2">
-    <div class="card pad">
-      <h2>Người dùng <span class="n" id="users-n"></span></h2>
-      <div class="scroll"><table id="t-users"></table></div>
-    </div>
-    <div class="card pad">
-      <h2>Tool chưa ai gọi <span class="n" id="unused-n"></span></h2>
-      <div class="tags" id="unused"></div>
-    </div>
+
+  <!-- MỘT bảng người, ăn nguyên chiều ngang. Trước đây là hai bảng "Người
+       dùng" và "Chỗ cắm" đặt cạnh nhau — hai lát cắt của cùng một tập người,
+       bắt phải đối chiếu bằng mắt xem dòng nào là ai. -->
+  <section class="card pad">
+    <h2>Người dùng <span class="n" id="people-n"></span></h2>
+    <div class="scroll"><table class="wide" id="t-people"></table></div>
+    <div id="people-pager"></div>
   </section>
 
-  <!-- Chỗ cắm ăn nguyên chiều ngang: 7 cột nhét vào nửa trang là lý do các cột
-       dính vào nhau và bảng phải cuộn ngang ngay trên màn hình rộng. -->
   <section class="card pad">
-    <h2>Chỗ cắm <span class="n" id="conn-n"></span></h2>
-    <div class="scroll"><table class="wide" id="t-conn"></table></div>
-    <div id="conn-note"></div>
-    <div id="hidden-box"></div>
+    <h2>Tool chưa ai gọi <span class="n" id="unused-n"></span></h2>
+    <div class="tags" id="unused"></div>
   </section>
 </div>
 
@@ -345,44 +350,39 @@
     el.addEventListener('mouseleave', hide); el.addEventListener('focus', show); el.addEventListener('blur', hide);
   }
 
+  let LAST = null;  // dữ liệu lần render gần nhất — để vẽ lại mà khỏi gọi mạng
+
   /**
-   * ── Thao tác ghi ──────────────────────────────────────────────────────
-   * Trang nằm ở URL công khai nên api/hidden.js đòi một token quản trị. Token
-   * chỉ sống trong localStorage của người vận hành, KHÔNG nướng vào trang —
-   * nướng vào là ai xem nguồn trang cũng có.
+   * ── Phân trang ────────────────────────────────────────────────────────
+   *
+   * Số trang giữ NGOÀI hàm render, vì trang tự nạp lại dữ liệu mỗi 30s: để
+   * bên trong thì cứ nửa phút người đọc lại bị ném về trang 1 giữa chừng.
+   *
+   * Chỉ vẽ thanh chuyển trang khi thật sự tràn — bảng 7 dòng mà vẫn có
+   * "Trang 1/1" là thêm một dòng chữ không nói gì.
    */
-  const TOKEN_KEY = 'mcp-dashboard-admin-token';
-  const askToken = () => {
-    const t = (localStorage.getItem(TOKEN_KEY) || '').trim()
-      || (prompt('Token quản trị (DASHBOARD_ADMIN_TOKEN):') || '').trim();
-    if (t) localStorage.setItem(TOKEN_KEY, t);
-    return t;
+  const PAGE_SIZE = 12;
+  const pageAt = {};
+  const pageOf = (key, total) => {
+    const max = Math.max(1, Math.ceil(total / PAGE_SIZE));
+    pageAt[key] = Math.min(pageAt[key] || 1, max);
+    return { page: pageAt[key], max, from: (pageAt[key] - 1) * PAGE_SIZE };
   };
 
-  let LAST = null;        // dữ liệu lần render gần nhất — để vẽ lại mà khỏi gọi mạng
-  let showHidden = false; // mở/đóng khu "đang ẩn"; giữ qua mỗi lần poll 30s
-
-  async function write(method, btn, payload) {
-    const token = askToken();
-    if (!token) return;
-    btn.disabled = true;
-    try {
-      const qs = method === 'DELETE' ? '?machineId=' + encodeURIComponent(payload.machineId) : '';
-      const r = await fetch('/api/hidden' + qs, {
-        method,
-        headers: { 'Content-Type': 'application/json', 'x-admin-token': token },
-        body: method === 'POST' ? JSON.stringify(payload) : undefined,
-      });
-      const j = await r.json().catch(() => ({}));
-      // Token sai thì QUÊN đi, đừng giữ lại để lần sau lại hỏng y hệt mà người
-      // dùng không hiểu vì sao — hỏi lại là xong.
-      if (r.status === 401) localStorage.removeItem(TOKEN_KEY);
-      if (!r.ok) throw new Error(j.error || 'HTTP ' + r.status);
-      render(await fetchData());
-    } catch (e) {
-      btn.disabled = false;
-      alert('Không thực hiện được: ' + e.message);
-    }
+  function pager(elId, key, total, redraw) {
+    const { page, max } = pageOf(key, total);
+    const el = $(elId);
+    if (!el) return;
+    if (max < 2) { el.innerHTML = ''; return; }
+    el.innerHTML = `<div class="pager">
+        <button class="btn" data-d="-1"${page === 1 ? ' disabled' : ''}>← Trước</button>
+        <span class="dim">Trang <b>${page}</b>/${max} · ${nf(total)} dòng</span>
+        <button class="btn" data-d="1"${page === max ? ' disabled' : ''}>Sau →</button>
+      </div>`;
+    el.querySelectorAll('button').forEach((b) => b.addEventListener('click', () => {
+      pageAt[key] = Math.min(max, Math.max(1, page + Number(b.dataset.d)));
+      redraw();
+    }));
   }
 
   /**
@@ -535,68 +535,50 @@
   // ── người dùng ───────────────────────────────────────────────────────
   // Cột "Không dùng được" CHỈ hiện khi có người thật sự bị chặn. Một cột toàn
   // số 0 không nói gì mà vẫn bắt mắt dừng lại đọc — đúng thứ cần bỏ.
-  const anyBlocked = DATA.users.some((u) => u.blocked);
-  count('users-n', DATA.users.length);
-  $('t-users').innerHTML =
-    '<thead><tr><th>Người</th><th class="r">Lượt</th>' +
-    (anyBlocked ? '<th class="r nw">Không dùng được</th>' : '') +
-    '<th class="r">Tool</th><th class="r nw">Gần nhất</th></tr></thead><tbody>' +
-    DATA.users.map((u) => `<tr><td>${esc(u.name)}</td>
-      <td class="r num">${nf(u.calls)}</td>` +
+  const anyBlocked = DATA.people.some((p) => p.blocked);
+  const SEV_STATUS = { active: 'good', revoked: 'critical', inactive: 'warning' };
+
+  /**
+   * Đồng hồ đếm ngược tới hạn refresh token — 7 ngày kể từ lần chạm cuối.
+   * Hết hạn là người đó phải quét mã đăng nhập lại, nên đây là con số DUY NHẤT
+   * trên bảng đòi hành động trước khi hỏng, chứ không phải báo sau khi hỏng.
+   */
+  const countdown = (iso) => {
+    if (!iso) return '<span class="dim">—</span>';
+    const h = (new Date(iso) - Date.now()) / 3600000;
+    if (h <= 0) return '<span style="color:var(--critical);font-weight:640">đã hết hạn</span>';
+    const sev = h < 24 ? 'critical' : h < 72 ? 'warning' : 'good';
+    const txt = h < 48 ? `${Math.round(h)} giờ` : `${Math.floor(h / 24)} ngày ${Math.round(h % 24)} giờ`;
+    return `<span style="color:var(--${sev})">${txt}</span>`;
+  };
+
+  const personRow = (p) => `<tr>
+      <td>${esc(p.name || p.openId || '—')}</td>
+      <td>${p.clients.length
+        ? `<div class="chips">${p.clients.map((c) => `<span class="pill sev-x" style="--sev: var(--${SEV_STATUS[c.status] || 'ink-3'})" title="${esc(c.app)} · thấy ${esc(age(c.seen))}"><span class="dot"></span>${esc(c.app)}</span>`).join('')}</div>`
+        : '<span class="dim">—</span>'}</td>
+      <td class="r num">${p.calls ? nf(p.calls) : '<span class="dim">chưa gọi</span>'}</td>` +
       (anyBlocked
-        ? (u.blocked
-          ? `<td class="r num" style="color: var(--critical); font-weight:640">${nf(u.blocked)}</td>`
+        ? (p.blocked
+          ? `<td class="r num" style="color: var(--critical); font-weight:640">${nf(p.blocked)}</td>`
           : '<td class="r num dim">0</td>')
         : '') +
-      `<td class="r num">${nf(u.tools)}</td>
-      <td class="r num dim nw">${dt(u.last)}</td></tr>`).join('') + '</tbody>';
-
-  // ── chỗ cắm ──────────────────────────────────────────────────────────
-  // Ba trạng thái, ba màu. 'không rõ' KHÔNG phải lỗi — đó là lượt gọi cũ hơn
-  // ngày server bắt đầu ghi bảng `machines`, nên tô đỏ như 'revoked' là vu oan.
-  const SEV_STATUS = { active: 'good', revoked: 'critical', inactive: 'warning' };
-  const connRow = (c) => `<tr data-mid="${esc(c.machineId)}">
-      <td>${esc(c.user || '—')}</td>
-      <td>${esc(c.app || '—')}<span class="sub mono">${esc(c.clientId || '—')}</span></td>
-      <td class="r num">${c.calls ? nf(c.calls) : '<span class="dim">chưa gọi</span>'}</td>
-      <td class="r num dim nw">${dt(c.last)}</td>
-      <td class="r num dim nw">${esc(age(c.seen))}</td>
-      <td class="nw"><span class="pill sev-x" style="--sev: var(--${SEV_STATUS[c.status] || 'ink-3'})"><span class="dot"></span>${esc(c.status)}</span></td>
-      <td class="r nw">${DATA.canWrite
-        ? `<button class="btn ghost danger js-hide" data-mid="${esc(c.machineId)}" data-label="${esc((c.user || '') + ' — ' + (c.app || '') + ' ' + (c.clientId || ''))}" title="Ẩn dòng này khỏi bảng">Ẩn</button>`
-        : ''}</td>
+      `<td class="r num">${nf(p.tools)}</td>
+      <td class="r nw">${countdown(p.tokenExpires)}</td>
+      <td class="r num dim nw">${dt(p.last)}</td>
     </tr>`;
 
-  count('conn-n', DATA.connectors.length);
-  $('t-conn').innerHTML =
-    '<thead><tr><th>Người</th><th>Nối bằng</th><th class="r">Lượt</th><th class="r nw">Gọi gần nhất</th><th class="r nw">Thấy gần nhất</th><th>Trạng thái</th><th></th></tr></thead><tbody>' +
-    DATA.connectors.map(connRow).join('') + '</tbody>';
-
-  const hid = DATA.hidden || [];
-  $('conn-note').innerHTML = DATA.canWrite
-    ? `<div class="ok-empty dim" style="justify-content:space-between">
-         <span>Ẩn chỉ giấu dòng khỏi bảng — không xoá lượt gọi nào trong audit.</span>
-         ${hid.length ? `<button class="btn ghost js-toggle-hidden">${showHidden ? 'Đóng' : `Đã ẩn (${nf(hid.length)})`}</button>` : ''}
-       </div>`
-    : '<div class="ok-empty dim">Thao tác ẩn đang tắt — chưa đặt DASHBOARD_ADMIN_TOKEN trên Vercel.</div>';
-
-  $('hidden-box').innerHTML = showHidden && hid.length
-    ? `<div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--rule)">
-         <h2 style="margin-bottom:9px">Đang ẩn <span class="n">· ${nf(hid.length)}</span></h2>
-         <div class="scroll"><table><tbody>${hid.map((c) => `<tr>
-           <td>${esc(c.user || '—')}<span class="sub mono">${esc(c.clientId || c.machineId)}</span></td>
-           <td class="r num dim nw">${esc(age(c.hiddenAt))}</td>
-           <td class="r nw"><button class="btn js-unhide" data-mid="${esc(c.machineId)}">Hiện lại</button></td>
-         </tr>`).join('')}</tbody></table></div>
-       </div>`
-    : '';
-
-  $('t-conn').querySelectorAll('.js-hide').forEach((b) =>
-    b.addEventListener('click', () => write('POST', b, { machineId: b.dataset.mid, label: b.dataset.label })));
-  $('hidden-box').querySelectorAll('.js-unhide').forEach((b) =>
-    b.addEventListener('click', () => write('DELETE', b, { machineId: b.dataset.mid })));
-  const tog = $('conn-note').querySelector('.js-toggle-hidden');
-  if (tog) tog.addEventListener('click', () => { showHidden = !showHidden; render(LAST); });
+  const drawPeople = () => {
+    const { from } = pageOf('people', DATA.people.length);
+    count('people-n', DATA.people.length);
+    $('t-people').innerHTML =
+      '<thead><tr><th>Người</th><th>Cắm bằng</th><th class="r">Lượt</th>' +
+      (anyBlocked ? '<th class="r nw">Không dùng được</th>' : '') +
+      '<th class="r">Tool</th><th class="r nw">Token còn</th><th class="r nw">Gần nhất</th></tr></thead><tbody>' +
+      DATA.people.slice(from, from + PAGE_SIZE).map(personRow).join('') + '</tbody>';
+    pager('people-pager', 'people', DATA.people.length, drawPeople);
+  };
+  drawPeople();
 
   // ── tool chưa dùng ───────────────────────────────────────────────────
   count('unused-n', DATA.unused.length);

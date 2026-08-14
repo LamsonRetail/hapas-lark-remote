@@ -112,7 +112,10 @@ console.log(`không dùng được: ${data.kpi.blocked} (${data.kpi.blockRate}%)
 const broken = data.tools.filter((t) => t.broken).map((t) => t.name);
 console.log(`nghi hỏng      : ${broken.length ? broken.join(', ') : 'không có'} (kiểm tay, canary mới là nguồn tin)`);
 console.log(`tool          : ${data.kpi.toolsUsed}/${data.kpi.toolsTotal} đã dùng, ${data.unused.length} chưa`);
-console.log(`chỗ cắm       : ${data.connectors.length} hiện, ${data.hidden.length} đang ẩn`);
-console.log(`người          : ${data.kpi.connected} đã cắm, ${data.kpi.users} đã gọi tool`);
+console.log(`người          : ${data.people.length} dòng — ${data.kpi.connected} đã cắm, ${data.kpi.users} đã gọi tool`);
+const nhieuClient = data.people.filter((p) => p.clients.length > 2);
+if (nhieuClient.length) {
+  console.log(`nghi còn trùng : ${nhieuClient.length} người có >2 ứng dụng — chạy supabase/machines-dedup.sql`);
+}
 console.log(`biểu đồ       : ${exData.total} lượt → ${exData.groups} nhóm theo ${EX_DIM}`);
 console.log('→ preview.html + explore-preview.html + index.html + explore.html + tools.json');

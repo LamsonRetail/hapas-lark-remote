@@ -234,3 +234,13 @@
    "khoảng thời gian này không có dữ liệu". */
 .summary { display: flex; flex-wrap: wrap; gap: 20px; font-size: 13px; color: var(--ink-2); }
 .summary b { color: var(--ink); font-weight: 660; font-variant-numeric: tabular-nums; }
+
+/* ── Chuyển trang dưới đáy bảng ──────────────────────────────────────────
+   Chỉ hiện khi bảng thật sự tràn — "Trang 1/1" là một dòng chữ không nói gì. */
+.pager { display: flex; align-items: center; justify-content: flex-end; gap: 14px;
+  margin-top: 12px; padding-top: 11px; border-top: 1px solid var(--grid); font-size: 13px; }
+.pager b { font-variant-numeric: tabular-nums; color: var(--ink); }
+
+/* Danh sách ứng dụng trong MỘT ô: xuống dòng thay vì kéo dài cột. Cao quá thì
+   tự cuộn — một người cắm nhiều chỗ không được phép làm cả hàng cao gấp ba. */
+.chips { display: flex; flex-wrap: wrap; gap: 5px; max-height: 52px; overflow-y: auto; }

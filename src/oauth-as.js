@@ -103,7 +103,9 @@ export function revokeGrant({ openId, clientId = null, name = '' }) {
   const clientsLeft = new Set(Object.values(db.tokens).filter((t) => t.openId === openId).map((t) => t.clientId));
   save(db);
 
-  revokeMachines({ openId, clientIds: clientId ? [clientId] : [] });
+  // Truyền TÊN ỨNG DỤNG, không phải client_id — khoá dòng machines đã đổi sang
+  // (người + ứng dụng) để cắm lại không sinh dòng mới. Xem machineIdFor.
+  revokeMachines({ openId, clientApps: clientId ? [appNameOf(db, clientId)] : [] });
 
   // Báo cáo đúng thứ ĐÃ xảy ra, không phải thứ lẽ ra xảy ra: open_id gõ sai thì
   // clientsLeft cũng bằng 0, và nếu cứ thế báo "đã xoá token Lark" thì dashboard

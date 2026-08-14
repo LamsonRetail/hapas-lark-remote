@@ -1,5 +1,6 @@
 import crypto from 'node:crypto';
 import { config } from './config.js';
+import { getUser } from './store.js';
 import { sbEnabled, sbFetch } from './supabase.js';
 
 /**
@@ -47,17 +48,36 @@ const CHANNEL = 'mcp remote';
  */
 const ADMIN_CLIENT = 'local-admin';
 
+/**
+ * Khoá của một dòng là (NGƯỜI, ỨNG DỤNG) — KHÔNG phải (người, client_id).
+ *
+ * `client_id` do client tự đăng ký qua DCR, và Claude đăng ký MỚI mỗi lần
+ * người dùng ngắt rồi cắm lại connector. Băm theo nó thì mỗi lần cắm lại là
+ * một dòng mới: đã đo trên dữ liệu thật, một người có 6 dòng cho đúng 2 chỗ
+ * cắm (Claude 4, Codex 2), và bảng biến thành một danh sách trùng lặp mà
+ * không cách nào dọn tự động.
+ *
+ * ĐÁNH ĐỔI: cùng một người dùng Claude desktop và Claude web giờ gộp làm một
+ * dòng. Chấp nhận được — server chỉ nhận HTTP request nên vốn dĩ chưa bao giờ
+ * phân biệt được hai cái đó; trước đây nó tách ra thành hai dòng là tách theo
+ * một con số ngẫu nhiên, không phải theo máy thật.
+ *
+ * `appKey` chốt giá trị thay thế khi client không khai tên: để null lọt vào
+ * hàm băm thì chuỗi "null" cũng ra một khoá ổn định, nhưng đọc bảng lên không
+ * ai hiểu đó là gì.
+ */
+const appKey = (clientApp) => clientApp || 'connector';
+
 /** machine_id của client zip là 16 ký tự hex; thêm tiền tố để không đụng PK. */
-export const machineIdFor = (openId, clientId) =>
-  'url-' + crypto.createHash('sha256').update(`${openId}|${clientId}`).digest('hex').slice(0, 12);
+export const machineIdFor = (openId, clientApp) =>
+  'url-' + crypto.createHash('sha256').update(`${openId}|${appKey(clientApp)}`).digest('hex').slice(0, 12);
 
 /**
- * Nhãn cho người đọc dashboard. Giữ NGUYÊN `client_id` chứ không cắt ngắn: đây
- * là thứ duy nhất nối dòng này với `audit_logs.client_id`, cắt đi là mất đường
- * truy về xem chỗ cắm đó đã gọi những gì.
+ * Nhãn cho người đọc dashboard. KHÔNG còn kèm `client_id`: nó đổi mỗi lần cắm
+ * lại nên chỉ gây hiểu nhầm là hai chỗ cắm khác nhau. Dashboard nối bảng này
+ * với audit qua `user_id`, không qua client_id nữa.
  */
-const labelFor = (openId, name, clientId, clientApp) =>
-  `${name || openId} — ${clientApp || 'connector'} ${clientId || '?'} (url)`;
+const labelFor = (openId, name, clientApp) => `${name || openId} — ${appKey(clientApp)} (url)`;
 
 const row = (machineId) => `machines?machine_id=eq.${encodeURIComponent(machineId)}&app_id=eq.${encodeURIComponent(config.appId)}`;
 
@@ -88,6 +108,11 @@ const DEGRADABLE = [
     field: 'channel',
     detect: (t) => /machines_channel_check/.test(t),
     why: "constraint machines_channel_check chưa nhận 'mcp remote'",
+  },
+  {
+    field: 'token_expires_at',
+    detect: (t) => /Could not find the 'token_expires_at' column/.test(t),
+    why: "bảng machines chưa có cột 'token_expires_at'",
   },
 ];
 
@@ -125,7 +150,7 @@ async function warn(label, res) {
  */
 export function recordAuth({ openId, name, clientId, clientApp }) {
   if (!sbEnabled || !openId || clientId === ADMIN_CLIENT) return;
-  void upsert({ openId, name, clientId, clientApp, activate: true }).catch((e) => console.error(`[machines] ${e.message}`));
+  void upsert({ openId, name, clientApp, activate: true }).catch((e) => console.error(`[machines] ${e.message}`));
 }
 
 /**
@@ -152,10 +177,27 @@ async function send(label, path, opts) {
  * dòng vừa thu hồi về 'active' (đã dựng đúng cảnh này trong test). Trạng thái
  * thuộc vòng đời auth, không thuộc hoạt động.
  */
-async function upsert({ openId, name, clientId, clientApp, activate = false }) {
-  const machineId = machineIdFor(openId, clientId);
+async function upsert({ openId, name, clientApp, activate = false }) {
+  const machineId = machineIdFor(openId, clientApp);
   const now = new Date().toISOString();
-  const optional = { user_id: openId, channel: CHANNEL, client_app: clientApp || null };
+
+  /**
+   * Hạn refresh token là thứ DUY NHẤT dashboard không tự suy ra được: nó nằm
+   * trong tokens.json mã hoá trên máy chủ. Trước đây chỉ có bản tổng trong dòng
+   * nhịp tim keepalive, nên bảng chỉ nói được "17 phiên còn sống" chứ không nói
+   * được ai sắp hết hạn.
+   *
+   * Token thuộc về NGƯỜI chứ không thuộc chỗ cắm (store khoá theo open_id), nên
+   * mọi dòng của cùng một người mang cùng một hạn — chấp nhận lặp để bảng nối
+   * được bằng một phép join duy nhất.
+   */
+  const exp = getUser(openId)?.refreshExpiresAt;
+  const optional = {
+    user_id: openId,
+    channel: CHANNEL,
+    client_app: clientApp || null,
+    token_expires_at: exp ? new Date(exp).toISOString() : null,
+  };
   const withOptional = (o) => {
     const out = { ...o };
     for (const f of usableFields()) out[f] = optional[f];
@@ -170,7 +212,7 @@ async function upsert({ openId, name, clientId, clientApp, activate = false }) {
     body: [withOptional({
       machine_id: machineId,
       app_id: config.appId,
-      display_name: labelFor(openId, name, clientId, clientApp),
+      display_name: labelFor(openId, name, clientApp),
       username: name || null,
       hostname: null, // server không thấy máy người gọi, xem ghi chú đầu file
       os: null,
@@ -187,7 +229,7 @@ async function upsert({ openId, name, clientId, clientApp, activate = false }) {
     method: 'PATCH',
     prefer: 'return=minimal',
     body: withOptional({
-      display_name: labelFor(openId, name, clientId, clientApp),
+      display_name: labelFor(openId, name, clientApp),
       username: name || null,
       version: config.version,
       ...(activate ? { status: 'active' } : {}),
@@ -211,14 +253,16 @@ const lastTouch = new Map();
 
 export function touchMachine({ openId, name, clientId, clientApp }) {
   if (!sbEnabled || !openId || clientId === ADMIN_CLIENT) return;
-  const key = `${openId}|${clientId}`;
+  // Throttle theo đúng khoá của dòng: theo client_id thì mỗi lần cắm lại là
+  // một khoá mới và lượt gọi đầu tiên sau đó luôn phải đi một vòng Supabase.
+  const key = `${openId}|${appKey(clientApp)}`;
   const now = Date.now();
   if (now - (lastTouch.get(key) || 0) < TOUCH_MS) return;
   // Chặn rò rỉ bộ nhớ nếu có client sinh client_id mới liên tục
   if (lastTouch.size > 500) lastTouch.clear();
   lastTouch.set(key, now);
 
-  void upsert({ openId, name, clientId, clientApp }).catch((e) => console.error(`[machines] touch: ${e.message}`));
+  void upsert({ openId, name, clientApp }).catch((e) => console.error(`[machines] touch: ${e.message}`));
 }
 
 /**
@@ -229,11 +273,15 @@ export function touchMachine({ openId, name, clientId, clientApp }) {
  * từ khi nào" — đúng thứ mà bảng này tồn tại để trả lời. Cắm lại thì `recordAuth`
  * đưa `status` về active trên chính dòng cũ.
  *
- * `machineIds` rỗng nghĩa là thu hồi mọi chỗ cắm của người này.
+ * `clientApps` rỗng nghĩa là thu hồi mọi chỗ cắm của người này.
+ *
+ * Nhận TÊN ỨNG DỤNG chứ không phải client_id, vì khoá dòng đã đổi — xem ghi
+ * chú ở `machineIdFor`. Chỗ gọi (oauth-as.js) tra tên qua `appNameOf` trước
+ * khi truyền vào.
  */
-export function revokeMachines({ openId, clientIds = [] }) {
+export function revokeMachines({ openId, clientApps = [] }) {
   if (!sbEnabled || !openId) return;
-  const ids = clientIds.length ? clientIds.map((c) => machineIdFor(openId, c)) : null;
+  const ids = clientApps.length ? clientApps.map((c) => machineIdFor(openId, c)) : null;
   const path = ids
     ? `machines?machine_id=in.(${ids.map(encodeURIComponent).join(',')})&app_id=eq.${encodeURIComponent(config.appId)}`
     : `machines?user_id=eq.${encodeURIComponent(openId)}&app_id=eq.${encodeURIComponent(config.appId)}`;
