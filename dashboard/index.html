@@ -3,7 +3,17 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Lark MCP remote — bảng vận hành</title>
 
-<style>
+<style>/**
+ * Giao diện dùng chung cho MỌI trang của dashboard.
+ *
+ * build.mjs nhúng thẳng file này vào chỗ đánh dấu /*__CSS__*/ của từng
+ * template. Nhúng chứ không <link>: bản preview.html phải mở được như một file
+ * rời (không máy chủ, không thư mục kèm theo), mà stylesheet ngoài thì mở kiểu
+ * đó là mất sạch giao diện.
+ *
+ * Sửa ở đây là cả hai trang đổi theo — đó là điểm của việc tách file.
+ */
+
   /* Nền phải TÁCH hẳn khỏi thẻ. Bản đầu dùng #eef1f5 với #fbfcfd — chênh nhau
      quá ít nên cả trang đọc thành một mảng trắng phẳng không thấy đâu là khối. */
   :root {
@@ -42,14 +52,26 @@
 
   * { box-sizing: border-box; }
   body { margin: 0; background: var(--plane); color: var(--ink);
-    font-family: system-ui, -apple-system, "Segoe UI", sans-serif; font-size: 15px; line-height: 1.5;
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif; font-size: 16px; line-height: 1.55;
     -webkit-font-smoothing: antialiased; }
-  .wrap { max-width: 1200px; margin: 0 auto; padding: 30px 22px 64px; display: flex; flex-direction: column; gap: 16px; }
+  /* 1200px trên màn 1440+ để lại hai dải trắng rộng bằng cả một cột bảng, mà
+     bảng chỗ cắm bên trong thì phải cuộn ngang. Nới trần và cho padding co
+     giãn theo màn: rộng thì dùng hết, hẹp thì vẫn không dính mép. */
+  .wrap { max-width: 1560px; margin: 0 auto; padding: 34px clamp(16px, 3vw, 40px) 72px;
+    display: flex; flex-direction: column; gap: 18px; }
   .mono { font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace; }
   .num { font-variant-numeric: tabular-nums; }
 
   header { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-bottom: 4px; }
-  h1 { font-size: 23px; font-weight: 680; margin: 0; letter-spacing: -.02em; }
+  h1 { font-size: 26px; font-weight: 680; margin: 0; letter-spacing: -.02em; }
+
+  /* Điều hướng giữa bảng vận hành và trang biểu đồ */
+  .nav { display: flex; gap: 4px; margin-top: 9px; }
+  .nav a { font-size: 13px; font-weight: 600; text-decoration: none; padding: 5px 12px; border-radius: 999px;
+    color: var(--ink-2); background: transparent; border: 1px solid transparent; }
+  .nav a:hover { background: var(--chip); color: var(--ink); }
+  .nav a[aria-current] { background: var(--wash); color: color-mix(in srgb, var(--series-1) 70%, var(--ink));
+    border-color: color-mix(in srgb, var(--series-1) 26%, transparent); }
   .head-right { display: flex; flex-direction: column; align-items: flex-end; gap: 8px; }
   .clock { display: inline-flex; align-items: center; gap: 9px; font-size: 21px; font-weight: 700;
     letter-spacing: .01em; color: var(--ink); font-variant-numeric: tabular-nums; }
@@ -112,15 +134,44 @@
   .kpi.hero .v { font-size: 34px; color: color-mix(in srgb, var(--series-1) 72%, var(--ink)); }
   .kpi .v small { font-size: 15px; font-weight: 600; color: var(--ink-3); letter-spacing: 0; }
 
-  table { width: 100%; border-collapse: collapse; font-size: 13px; }
-  th { text-align: left; font-weight: 600; font-size: 10.5px; letter-spacing: .05em; text-transform: uppercase;
-    color: var(--ink-3); padding: 0 10px 6px 0; border-bottom: 1px solid var(--rule); white-space: nowrap; }
-  td { padding: 7px 10px 7px 0; border-bottom: 1px solid var(--grid); vertical-align: middle; }
+  /* Ô bảng trước đây chỉ có đệm PHẢI (`7px 10px 7px 0`), nên cột này chạm sát
+     chữ cột kia — ở bảng chỗ cắm 7 cột thì đọc thành một dải chữ liền. Đệm đều
+     hai bên, và `.scroll table` có bề rộng tối thiểu để màn hẹp thì cuộn ngang
+     chứ không bóp các cột dí vào nhau. */
+  table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+  th { text-align: left; font-weight: 600; font-size: 11px; letter-spacing: .05em; text-transform: uppercase;
+    color: var(--ink-3); padding: 0 14px 8px; border-bottom: 1px solid var(--rule); white-space: nowrap; }
+  td { padding: 10px 14px; border-bottom: 1px solid var(--grid); vertical-align: middle; }
+  th:first-child, td:first-child { padding-left: 0; }
+  th:last-child, td:last-child { padding-right: 0; }
   tr:last-child td { border-bottom: 0; }
-  td.r, th.r { text-align: right; padding-right: 0; }
+  td.r, th.r { text-align: right; }
+  td.nw, th.nw { white-space: nowrap; }
   tbody tr:hover td { background: var(--sunken); }
   .scroll { overflow-x: auto; }
+  .scroll table { min-width: 560px; }
+  .scroll table.wide { min-width: 940px; }
   .dim { color: var(--ink-2); }
+
+  /* Nhãn phụ dưới giá trị chính trong một ô — client_id dưới tên ứng dụng.
+     Xuống dòng riêng thay vì nối đuôi: chuỗi băm 22 ký tự đứng cạnh chữ
+     "Claude" thì mắt không tách nổi đâu là tên app, đâu là mã. */
+  .sub { display: block; font-size: 11.5px; color: var(--ink-3); margin-top: 2px;
+    max-width: 30ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  /* Nút thao tác trong bảng — mờ lúc bình thường, rõ khi rê vào đúng dòng, để
+     một bảng dùng để ĐỌC không biến thành bãi nút bấm. */
+  .btn { font: inherit; font-size: 12px; font-weight: 600; line-height: 1; cursor: pointer;
+    padding: 6px 11px; border-radius: 8px; border: 1px solid var(--hairline);
+    background: var(--card); color: var(--ink-2); }
+  .btn:hover { background: var(--raise); color: var(--ink); }
+  .btn:disabled { opacity: .5; cursor: progress; }
+  .btn.danger:hover { border-color: color-mix(in srgb, var(--critical) 40%, transparent);
+    color: var(--critical); background: color-mix(in srgb, var(--critical) 8%, var(--card)); }
+  .btn.ghost { border-color: transparent; background: transparent; }
+  td .btn { opacity: .35; transition: opacity .14s ease; }
+  tbody tr:hover td .btn, td .btn:focus-visible { opacity: 1; }
+  @media (hover: none) { td .btn { opacity: 1; } }
 
   .pill { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; font-weight: 600;
     padding: 2px 8px; border-radius: 999px; background: var(--chip); color: var(--ink-2); white-space: nowrap; }
@@ -142,12 +193,54 @@
     background: var(--ink); color: var(--card); font-size: 12px; padding: 6px 9px; border-radius: 6px; max-width: 250px; }
   #tip.on { opacity: 1; }
   @media (prefers-reduced-motion: reduce) { #tip { transition: none; } .card { transition: none; } }
+
+/* ── Ô điều khiển (trang Biểu đồ) ────────────────────────────────────────
+   Thanh chọn nằm NGANG và luôn hiện, không giấu sau menu: cả trang chỉ có một
+   việc là "đổi cách nhìn", giấu chính cái cần bấm đi thì trang mất lý do tồn tại. */
+.controls { display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-end; }
+.field { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.field > label { font-size: 11px; font-weight: 680; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-3); }
+.field select {
+  font: inherit; font-size: 14px; color: var(--ink); background: var(--card);
+  border: 1px solid var(--rule); border-radius: 9px; padding: 9px 34px 9px 12px; cursor: pointer;
+  /* Mũi tên vẽ bằng gradient — không nhúng ảnh, không gọi ra ngoài (CSP của
+     Vercel chặn host ngoài, mà bản preview thì không có mạng để mà gọi). */
+  appearance: none;
+  background-image: linear-gradient(45deg, transparent 50%, var(--ink-3) 50%), linear-gradient(135deg, var(--ink-3) 50%, transparent 50%);
+  background-position: calc(100% - 17px) 52%, calc(100% - 12px) 52%;
+  background-size: 5px 5px, 5px 5px; background-repeat: no-repeat;
+}
+.field select:hover { border-color: var(--ink-3); }
+.field select:focus-visible { outline: 2px solid var(--series-1); outline-offset: 1px; }
+
+/* Nhóm nút một-lựa-chọn — dùng cho kiểu biểu đồ và cửa sổ ngày, nơi chỉ có
+   2–3 giá trị. Bày hết ra rẻ hơn một lần bấm để mở danh sách. */
+.seg { display: inline-flex; background: var(--sunken); border: 1px solid var(--rule); border-radius: 9px; padding: 3px; gap: 3px; }
+.seg button { font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; white-space: nowrap;
+  padding: 6px 13px; border-radius: 6px; border: 0; background: transparent; color: var(--ink-2); }
+.seg button:hover { color: var(--ink); }
+.seg button[aria-pressed="true"] { background: var(--card); color: var(--ink); box-shadow: var(--elev); }
+
+.chk { display: inline-flex; align-items: center; gap: 8px; font-size: 13.5px; color: var(--ink-2); cursor: pointer; padding-bottom: 9px; }
+.chk input { width: 16px; height: 16px; accent-color: var(--series-1); cursor: pointer; }
+
+.spacer { flex: 1 1 auto; }
+
+/* Dải tóm tắt dưới thanh chọn: nói rõ đang nhìn bao nhiêu dòng, trong bao lâu.
+   Không có nó thì một biểu đồ trống đọc thành "hệ thống chết" thay vì
+   "khoảng thời gian này không có dữ liệu". */
+.summary { display: flex; flex-wrap: wrap; gap: 20px; font-size: 13px; color: var(--ink-2); }
+.summary b { color: var(--ink); font-weight: 660; font-variant-numeric: tabular-nums; }
 </style>
 
 <div class="wrap">
   <header>
     <div>
       <h1>Lark MCP remote</h1>
+      <nav class="nav">
+        <a href="/" aria-current="page">Bảng vận hành</a>
+        <a href="/explore">Biểu đồ</a>
+      </nav>
     </div>
     <div class="head-right">
       <div class="clock" id="clock"></div>
@@ -181,13 +274,18 @@
       <div class="scroll"><table id="t-users"></table></div>
     </div>
     <div class="card pad">
-      <h2>Chỗ cắm <span class="n" id="conn-n"></span></h2>
-      <div class="scroll"><table id="t-conn"></table></div>
+      <h2>Tool chưa ai gọi <span class="n" id="unused-n"></span></h2>
+      <div class="tags" id="unused"></div>
     </div>
   </section>
+
+  <!-- Chỗ cắm ăn nguyên chiều ngang: 7 cột nhét vào nửa trang là lý do các cột
+       dính vào nhau và bảng phải cuộn ngang ngay trên màn hình rộng. -->
   <section class="card pad">
-    <h2>Tool chưa ai gọi <span class="n" id="unused-n"></span></h2>
-    <div class="tags" id="unused"></div>
+    <h2>Chỗ cắm <span class="n" id="conn-n"></span></h2>
+    <div class="scroll"><table class="wide" id="t-conn"></table></div>
+    <div id="conn-note"></div>
+    <div id="hidden-box"></div>
   </section>
 </div>
 
@@ -239,7 +337,48 @@
     el.addEventListener('mouseleave', hide); el.addEventListener('focus', show); el.addEventListener('blur', hide);
   }
 
+  /**
+   * ── Thao tác ghi ──────────────────────────────────────────────────────
+   * Trang nằm ở URL công khai nên api/hidden.js đòi một token quản trị. Token
+   * chỉ sống trong localStorage của người vận hành, KHÔNG nướng vào trang —
+   * nướng vào là ai xem nguồn trang cũng có.
+   */
+  const TOKEN_KEY = 'mcp-dashboard-admin-token';
+  const askToken = () => {
+    const t = (localStorage.getItem(TOKEN_KEY) || '').trim()
+      || (prompt('Token quản trị (DASHBOARD_ADMIN_TOKEN):') || '').trim();
+    if (t) localStorage.setItem(TOKEN_KEY, t);
+    return t;
+  };
+
+  let LAST = null;        // dữ liệu lần render gần nhất — để vẽ lại mà khỏi gọi mạng
+  let showHidden = false; // mở/đóng khu "đang ẩn"; giữ qua mỗi lần poll 30s
+
+  async function write(method, btn, payload) {
+    const token = askToken();
+    if (!token) return;
+    btn.disabled = true;
+    try {
+      const qs = method === 'DELETE' ? '?machineId=' + encodeURIComponent(payload.machineId) : '';
+      const r = await fetch('/api/hidden' + qs, {
+        method,
+        headers: { 'Content-Type': 'application/json', 'x-admin-token': token },
+        body: method === 'POST' ? JSON.stringify(payload) : undefined,
+      });
+      const j = await r.json().catch(() => ({}));
+      // Token sai thì QUÊN đi, đừng giữ lại để lần sau lại hỏng y hệt mà người
+      // dùng không hiểu vì sao — hỏi lại là xong.
+      if (r.status === 401) localStorage.removeItem(TOKEN_KEY);
+      if (!r.ok) throw new Error(j.error || 'HTTP ' + r.status);
+      render(await fetchData());
+    } catch (e) {
+      btn.disabled = false;
+      alert('Không thực hiện được: ' + e.message);
+    }
+  }
+
   function render(DATA) {
+  LAST = DATA;
   // ── canh gác + phán quyết tổng ───────────────────────────────────────
   const w = DATA.watchdog, sess = w.session || {};
   const cAge = ageH(w.canary && w.canary.at), iAge = ageH(w.ingest && w.ingest.at);
@@ -275,7 +414,9 @@
   const k = DATA.kpi;
   $('kpi').innerHTML = [
     { hero: 1, k: 'Lượt gọi', v: nf(k.calls), d: `${DATA.daily.length} ngày có dữ liệu` },
-    { k: 'Người dùng', v: nf(k.users), d: `${DATA.connectors.length} chỗ cắm` },
+    // "Đã cắm" là số người ĐĂNG NHẬP được, "đã gọi" là số người thật sự dùng.
+    // Chênh lệch giữa hai số là thứ cần biết khi vừa phát link cho phòng ban.
+    { k: 'Người đã cắm', v: nf(k.connected ?? k.users), d: `${nf(k.users)} người đã gọi tool` },
     { k: 'Độ trễ p95', v: ms(k.p95), d: 'trung vị ' + ms(k.p50) },
     { k: 'Tool đã dùng', v: `${k.toolsUsed}<small>/${k.toolsTotal}</small>`, d: `${DATA.unused.length} chưa ai gọi` },
   ].map((t) => `<div class="card kpi${t.hero ? ' hero' : ''}">
@@ -351,17 +492,51 @@
       <td class="r num dim" style="white-space:nowrap">${dt(u.last)}</td></tr>`).join('') + '</tbody>';
 
   // ── chỗ cắm ──────────────────────────────────────────────────────────
+  // Ba trạng thái, ba màu. 'không rõ' KHÔNG phải lỗi — đó là lượt gọi cũ hơn
+  // ngày server bắt đầu ghi bảng `machines`, nên tô đỏ như 'revoked' là vu oan.
+  const SEV_STATUS = { active: 'good', revoked: 'critical', inactive: 'warning' };
+  const connRow = (c) => `<tr data-mid="${esc(c.machineId)}">
+      <td>${esc(c.user || '—')}</td>
+      <td>${esc(c.app || '—')}<span class="sub mono">${esc(c.clientId || '—')}</span></td>
+      <td class="r num">${c.calls ? nf(c.calls) : '<span class="dim">chưa gọi</span>'}</td>
+      <td class="r num dim nw">${dt(c.last)}</td>
+      <td class="r num dim nw">${esc(age(c.seen))}</td>
+      <td class="nw"><span class="pill sev-x" style="--sev: var(--${SEV_STATUS[c.status] || 'ink-3'})"><span class="dot"></span>${esc(c.status)}</span></td>
+      <td class="r nw">${DATA.canWrite
+        ? `<button class="btn ghost danger js-hide" data-mid="${esc(c.machineId)}" data-label="${esc((c.user || '') + ' — ' + (c.app || '') + ' ' + (c.clientId || ''))}" title="Ẩn dòng này khỏi bảng">Ẩn</button>`
+        : ''}</td>
+    </tr>`;
+
   count('conn-n', DATA.connectors.length);
   $('t-conn').innerHTML =
-    '<thead><tr><th>Người</th><th>Nối bằng</th><th class="r">Lượt</th><th class="r">Gọi gần nhất</th><th class="r">Thấy gần nhất</th><th>Trạng thái</th></tr></thead><tbody>' +
-    DATA.connectors.map((c) => `<tr>
-      <td>${esc(c.user || '—')}</td>
-      <td>${esc(c.app || '—')} <span class="mono dim" style="font-size:11px">${esc(c.clientId)}</span></td>
-      <td class="r num">${nf(c.calls)}</td>
-      <td class="r num dim" style="white-space:nowrap">${dt(c.last)}</td>
-      <td class="r num dim" style="white-space:nowrap">${esc(age(c.seen))}</td>
-      <td><span class="pill sev-x" style="--sev: var(--${c.status === 'active' ? 'good' : 'critical'})"><span class="dot"></span>${esc(c.status)}</span></td>
-    </tr>`).join('') + '</tbody>';
+    '<thead><tr><th>Người</th><th>Nối bằng</th><th class="r">Lượt</th><th class="r nw">Gọi gần nhất</th><th class="r nw">Thấy gần nhất</th><th>Trạng thái</th><th></th></tr></thead><tbody>' +
+    DATA.connectors.map(connRow).join('') + '</tbody>';
+
+  const hid = DATA.hidden || [];
+  $('conn-note').innerHTML = DATA.canWrite
+    ? `<div class="ok-empty dim" style="justify-content:space-between">
+         <span>Ẩn chỉ giấu dòng khỏi bảng — không xoá lượt gọi nào trong audit.</span>
+         ${hid.length ? `<button class="btn ghost js-toggle-hidden">${showHidden ? 'Đóng' : `Đã ẩn (${nf(hid.length)})`}</button>` : ''}
+       </div>`
+    : '<div class="ok-empty dim">Thao tác ẩn đang tắt — chưa đặt DASHBOARD_ADMIN_TOKEN trên Vercel.</div>';
+
+  $('hidden-box').innerHTML = showHidden && hid.length
+    ? `<div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--rule)">
+         <h2 style="margin-bottom:9px">Đang ẩn <span class="n">· ${nf(hid.length)}</span></h2>
+         <div class="scroll"><table><tbody>${hid.map((c) => `<tr>
+           <td>${esc(c.user || '—')}<span class="sub mono">${esc(c.clientId || c.machineId)}</span></td>
+           <td class="r num dim nw">${esc(age(c.hiddenAt))}</td>
+           <td class="r nw"><button class="btn js-unhide" data-mid="${esc(c.machineId)}">Hiện lại</button></td>
+         </tr>`).join('')}</tbody></table></div>
+       </div>`
+    : '';
+
+  $('t-conn').querySelectorAll('.js-hide').forEach((b) =>
+    b.addEventListener('click', () => write('POST', b, { machineId: b.dataset.mid, label: b.dataset.label })));
+  $('hidden-box').querySelectorAll('.js-unhide').forEach((b) =>
+    b.addEventListener('click', () => write('DELETE', b, { machineId: b.dataset.mid })));
+  const tog = $('conn-note').querySelector('.js-toggle-hidden');
+  if (tog) tog.addEventListener('click', () => { showHidden = !showHidden; render(LAST); });
 
   // ── tool chưa dùng ───────────────────────────────────────────────────
   count('unused-n', DATA.unused.length);

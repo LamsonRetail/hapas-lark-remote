@@ -47,11 +47,26 @@ export async function computeDashboard({ sb, toolNames, appId, windowDays = 30 }
   // này raw đủ nhẹ, và bỏ rollup thì đây là nguồn duy nhất, không lệch số.
   // v_session_health giữ lại vì đó là chỗ DUY NHẤT có hạn refresh token (nằm
   // trong tokens.json mã hoá, Supabase không có đường nào khác chạm tới).
-  const [raw, machines, canaryRow, sessionRow] = await Promise.all([
+  /**
+   * Bảng `dashboard_hidden` là tuỳ chọn: chưa chạy supabase/dashboard-hidden.sql
+   * thì PostgREST trả 404 và cả trang phải chết theo — mà thứ chết đi chỉ là
+   * một danh sách để ẩn bớt dòng. Nuốt lỗi, coi như chưa ai ẩn gì.
+   */
+  const readHidden = async () => {
+    try {
+      return await sb('dashboard_hidden?select=machine_id,label,hidden_at&order=hidden_at.desc');
+    } catch {
+      return [];
+    }
+  };
+
+  const [raw, machines, canaryRow, sessionRow, hiddenRows] = await Promise.all([
     page(`audit_logs?source=eq.url&created_at=gte.${since}&select=created_at,tool_name,user_name,open_id,client_id,ok,duration_ms,lark_code,error_msg&order=created_at.asc`),
-    page('machines?channel=eq.mcp%20remote&select=machine_id,username,user_id,client_app,status,installed_at,last_seen&order=last_seen.desc'),
+    // `display_name` chở theo client_id — xem ghi chú ở phần dựng chỗ cắm.
+    page('machines?channel=eq.mcp%20remote&select=machine_id,username,user_id,client_app,display_name,status,installed_at,last_seen&order=last_seen.desc'),
     sb('audit_logs?source=eq.url&tool_name=eq.canary_heartbeat&select=created_at,ok,args&order=created_at.desc&limit=1'),
     sb('v_session_health?select=created_at,state&limit=1'),
+    readHidden(),
   ]);
 
   const calls = raw.filter(
@@ -152,36 +167,76 @@ export async function computeDashboard({ sb, toolNames, appId, windowDays = 30 }
   }
 
   /**
-   * Chỗ cắm: ghép (open_id, client_id) trong audit với dòng `machines`. Bảng
-   * machines không có cột client_id — nó nằm trong `machine_id` đã băm, nên
-   * dựng lại khoá bằng đúng công thức server ghi.
+   * Chỗ cắm — HỢP của hai nguồn, khoá chung là `machine_id`:
+   *
+   *   audit_logs  → ai đã GỌI tool (có open_id + client_id, băm ra machine_id)
+   *   machines    → ai đã ĐĂNG NHẬP (machine_id là khoá chính sẵn)
+   *
+   * Trước đây chỉ dựng từ audit, nên người vừa cắm connector xong mà chưa gọi
+   * tool nào thì không tồn tại trên bảng — đúng lúc cần nhìn nhất (vừa phát
+   * link cho phòng ban, muốn biết ai đã cắm được) thì bảng lại trống. Đã đo:
+   * 11/24 dòng `machines` không hiện ra.
+   *
+   * Chiều ngược lại vẫn phải giữ: dòng audit cũ hơn ngày có `machines` thì
+   * không có dòng machines nào để ghép — đó là các dòng 'không rõ'.
    */
   const connMap = new Map();
+
+  const touch = (mid, seed) => {
+    const c = connMap.get(mid) || {
+      machineId: mid, openId: null, clientId: null, user: null,
+      calls: 0, last: null, app: null, status: null, installed: null, seen: null,
+    };
+    connMap.set(mid, Object.assign(c, seed));
+    return c;
+  };
+
   for (const r of calls) {
     if (!r.open_id || !r.client_id) continue;
-    const k = `${r.open_id}|${r.client_id}`;
-    const c = connMap.get(k) || { openId: r.open_id, clientId: r.client_id, user: r.user_name, calls: 0, last: '' };
+    const c = touch(machineIdFor(r.open_id, r.client_id), {});
+    c.openId = r.open_id;
+    c.clientId = r.client_id;
+    c.user = r.user_name || c.user;
     c.calls++;
-    if (r.created_at > c.last) c.last = r.created_at;
-    connMap.set(k, c);
+    if (!c.last || r.created_at > c.last) c.last = r.created_at;
   }
-  const byMid = new Map(machines.map((m) => [m.machine_id, m]));
-  const connectors = [...connMap.values()]
-    .map((c) => {
-      const m = byMid.get(machineIdFor(c.openId, c.clientId));
-      // `last` (từ audit) và `seen` (từ machines) trả lời hai câu khác nhau:
-      // lần cuối GỌI tool, và lần cuối server CHẠM vào chỗ cắm này — xoay token
-      // cũng tính. Để cạnh nhau thì chênh lệch tự tố cáo: còn nối mà lâu không
-      // gọi là bình thường; gọi gần đây mà lâu không thấy là phiên đã chết.
-      return {
-        ...c,
-        app: m?.client_app || null,
-        status: m?.status || 'không rõ',
-        installed: m?.installed_at || null,
-        seen: m?.last_seen || null,
-      };
-    })
-    .sort((a, b) => b.calls - a.calls);
+
+  /**
+   * `machines` không có cột client_id — server băm nó vào `machine_id`, không
+   * đảo ngược được. Nhưng `display_name` do machines.js dựng theo đúng khuôn
+   * "tên — app <client_id> (url)", nên bóc lại được từ đó. Bóc hụt thì để null
+   * và bảng hiện '—': thà thiếu một nhãn còn hơn giấu cả một chỗ cắm.
+   */
+  const clientIdFromLabel = (s) => (String(s || '').match(/\s(\S+)\s+\(url\)\s*$/) || [])[1] || null;
+
+  for (const m of machines) {
+    const c = touch(m.machine_id, {});
+    c.openId = c.openId || m.user_id || null;
+    c.clientId = c.clientId || clientIdFromLabel(m.display_name);
+    c.user = c.user || m.username || null;
+    // `last` (audit) và `seen` (machines) trả lời hai câu khác nhau: lần cuối
+    // GỌI tool, và lần cuối server CHẠM vào chỗ cắm này — xoay token cũng tính.
+    // Để cạnh nhau thì chênh lệch tự tố cáo: còn nối mà lâu không gọi là bình
+    // thường; gọi gần đây mà lâu không thấy là phiên đã chết.
+    c.app = m.client_app || c.app;
+    c.status = m.status || c.status;
+    c.installed = m.installed_at || c.installed;
+    c.seen = m.last_seen || c.seen;
+  }
+
+  const hiddenIds = new Set(hiddenRows.map((h) => h.machine_id));
+  const allConnectors = [...connMap.values()]
+    .map((c) => ({ ...c, status: c.status || 'không rõ' }))
+    // Chưa gọi lần nào thì xếp theo lần thấy gần nhất, không rơi hết xuống đáy
+    // chung một cục — người vừa cắm xong phải nổi lên trên.
+    .sort((a, b) => b.calls - a.calls || String(b.seen || '').localeCompare(String(a.seen || '')));
+
+  const connectors = allConnectors.filter((c) => !hiddenIds.has(c.machineId));
+  // Đã ẩn thì vẫn gửi kèm, để trang có cái mà "hiện lại" — ẩn một chiều không
+  // hoàn tác được thì chẳng khác gì xoá, mà xoá là thứ ta cố tình tránh.
+  const hidden = allConnectors
+    .filter((c) => hiddenIds.has(c.machineId))
+    .map((c) => ({ ...c, hiddenAt: hiddenRows.find((h) => h.machine_id === c.machineId)?.hidden_at || null }));
 
   const durs = calls.map((r) => r.duration_ms).filter((x) => x != null).sort((a, b) => a - b);
   const canary = canaryRow[0] || null;
@@ -210,6 +265,11 @@ export async function computeDashboard({ sb, toolNames, appId, windowDays = 30 }
       p50: quant(durs, 0.5),
       p95: quant(durs, 0.95),
       users: users.length,
+      // Đã cắm ≠ đã gọi. `users` đếm người có lượt gọi trong cửa sổ; `connected`
+      // đếm người đã đăng nhập được, kể cả chưa gọi tool nào. Chênh lệch giữa
+      // hai số chính là "phát link rồi mà chưa ai dùng" — số cần biết nhất
+      // trong lúc triển khai cho phòng ban mới.
+      connected: new Set(connectors.map((c) => c.openId).filter(Boolean)).size,
       toolsUsed: usedCurrent,
       toolsTotal: all.length,
       toolsRetired: retired,
@@ -227,6 +287,7 @@ export async function computeDashboard({ sb, toolNames, appId, windowDays = 30 }
     users,
     noResponse,
     connectors,
+    hidden,
     auth: [...authCounts.entries()].map(([event, n]) => ({ event, n })).sort((a, b) => b.n - a.n),
   };
 }

@@ -1,4 +1,7 @@
 .vercel
 .env*
-# Số liệu nướng sẵn — chứa tên thật + open_id, không đưa vào git
-preview.html
+# Số liệu nướng sẵn — chứa tên thật + open_id, không đưa vào git.
+# Khớp cả explore-preview.html: bản biểu đồ mặc định nhóm theo tool nên hiện
+# chưa lộ tên ai, nhưng đổi một dòng trong build.mjs sang "người gọi" là lộ —
+# chặn theo khuôn tên để không phải nhớ ra điều đó vào đúng lúc đổi.
+*preview.html

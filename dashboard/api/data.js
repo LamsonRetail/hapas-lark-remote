@@ -1,4 +1,5 @@
 import { computeDashboard } from '../compute.mjs';
+import { sb, requireSupabase } from '../sb.mjs';
 // Import thay vì đọc file: hàm serverless được đóng gói riêng, file tĩnh cạnh
 // nó không chắc có mặt trong bundle — còn import thì bundler bắt buộc phải kéo theo.
 import toolNames from '../tools.json' with { type: 'json' };
@@ -12,24 +13,10 @@ import toolNames from '../tools.json' with { type: 'json' };
  * Biến môi trường cần đặt trên Vercel:
  *   SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY   — nguồn số liệu
  *   LARK_APP_ID                               — chỉ để hiển thị
+ *   DASHBOARD_ADMIN_TOKEN                     — cổng cho api/hidden.js
  */
-
-const SB_URL = (process.env.SUPABASE_URL || '').trim().replace(/\/+$/, '');
-const SB_KEY = (process.env.SUPABASE_SERVICE_ROLE_KEY || '').trim();
-const url = /^https?:\/\//i.test(SB_URL) ? SB_URL : SB_URL && `https://${SB_URL}.supabase.co`;
-
-
 export default async function handler(req, res) {
-  if (!url || !SB_KEY) return res.status(500).json({ error: 'Thiếu SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY' });
-
-  const sb = async (p) => {
-    const r = await fetch(`${url}/rest/v1/${p}`, {
-      headers: { apikey: SB_KEY, Authorization: `Bearer ${SB_KEY}` },
-      signal: AbortSignal.timeout(20000),
-    });
-    if (!r.ok) throw new Error(`${p.slice(0, 60)} → ${r.status}`);
-    return r.json();
-  };
+  if (!requireSupabase(res)) return;
 
   try {
     const data = await computeDashboard({
@@ -42,7 +29,8 @@ export default async function handler(req, res) {
     // nhận đúng bản cũ đó, tưởng hệ thống đứng yên trong khi nó đang chạy.
     // `no-store` ở vercel.json chỉ chặn cache phía trình duyệt, không chặn edge.
     res.setHeader('Cache-Control', 'no-store');
-    res.json(data);
+    // Trang cần biết nút ẩn có dùng được không, mà KHÔNG được biết token là gì.
+    res.json({ ...data, canWrite: Boolean((process.env.DASHBOARD_ADMIN_TOKEN || '').trim()) });
   } catch (e) {
     res.status(502).json({ error: e.message });
   }
