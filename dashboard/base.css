@@ -272,3 +272,10 @@
 /* Số trang: to và rõ, vì đó là thứ mắt tìm khi bấm qua lại. */
 .pnum { font-size: var(--fs-4); color: var(--ink-2); font-variant-numeric: tabular-nums; }
 .pnum b { font-size: var(--fs-5); font-weight: 700; color: var(--ink); }
+
+/* Nhóm nút nhỏ đặt ngay trong tiêu đề thẻ — cùng dòng với chữ, không đội thêm
+   một hàng điều khiển riêng cho mỗi biểu đồ. */
+.seg-sm { padding: 2px; border-radius: 7px; }
+.seg-sm button { font-size: var(--fs-2); font-weight: 650; padding: 4px 9px; border-radius: 5px;
+  text-transform: none; letter-spacing: 0; }
+h2 .seg-sm { align-self: center; }

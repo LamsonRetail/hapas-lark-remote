@@ -36,7 +36,14 @@
       <div id="c-daily"></div>
     </div>
     <div class="card pad">
-      <h2>Tool dùng nhiều nhất</h2>
+      <h2>
+        Tool <span class="n" id="tools-n"></span>
+        <span class="spacer"></span>
+        <span class="seg seg-sm" id="f-toolrank">
+          <button type="button" data-v="top">Nhiều nhất</button>
+          <button type="button" data-v="bottom">Ít nhất</button>
+        </span>
+      </h2>
       <div id="c-tools"></div>
     </div>
   </section>
@@ -51,11 +58,6 @@
     <h2>Người dùng <span class="n" id="people-n"></span></h2>
     <div class="scroll"><table class="wide" id="t-people"></table></div>
     <div id="people-pager"></div>
-  </section>
-
-  <section class="card pad">
-    <h2>Tool chưa ai gọi <span class="n" id="unused-n"></span></h2>
-    <div class="tags" id="unused"></div>
   </section>
 
   <!-- Đào sâu: phần trước đây là trang /explore riêng -->
@@ -156,6 +158,7 @@
   }
 
   let LAST = null;         // dữ liệu lần render gần nhất — để vẽ lại mà khỏi gọi mạng
+  let toolRank = 'top';    // 'top' | 'bottom' — giữ ngoài render, xem canaryOpen
   let canaryOpen = false;  // bảng probe đang mở? giữ qua mỗi lần poll 30s
 
   /**
@@ -319,16 +322,39 @@
     });
   })();
 
-  // ── thanh ngang: top tool ───────────────────────────────────────────
-  (function () {
-    const t = DATA.tools.slice(0, 10);
-    if (!t.length) { $('c-tools').innerHTML = '<div class="ok-empty dim">Chưa có tool nào được gọi.</div>'; return; }
+  // ── thanh ngang: tool nhiều / ít nhất ────────────────────────────────
+  const drawTools = () => {
+    /**
+     * `DATA.tools` giờ gồm CẢ tool chưa ai gọi (calls = 0) — thẻ "Tool chưa ai
+     * gọi" cũ đã bỏ. Nhánh "Ít nhất" tự trả lời luôn câu đó, mà không bắt người
+     * đọc nhảy sang một danh sách nhãn riêng ở nửa dưới trang.
+     *
+     * Đồng hạng thì xếp theo tên: 22 tool cùng 0 lượt mà để thứ tự tuỳ ý thì
+     * mỗi lần poll 30s danh sách lại xáo, đọc dở dang là mất chỗ.
+     */
+    const src = DATA.tools.slice().sort((a, b) => (toolRank === 'top'
+      ? b.calls - a.calls || a.name.localeCompare(b.name)
+      : a.calls - b.calls || a.name.localeCompare(b.name)));
+    const t = src.slice(0, 10);
+    $('tools-n').textContent = `· ${nf(DATA.kpi.toolsUsed)}/${nf(DATA.kpi.toolsTotal)} đã dùng`;
+    for (const b of $('f-toolrank').children) b.setAttribute('aria-pressed', String(b.dataset.v === toolRank));
+
+    if (!t.length) { $('c-tools').innerHTML = '<div class="ok-empty dim">Chưa có tool nào.</div>'; return; }
     const W = 520, rowH = 25, LW = 172, PR = 46, H = t.length * rowH + 4;
     const max = Math.max(1, ...t.map((x) => x.calls));
     const track = W - LW - PR;
     let s = '';
     t.forEach((x, i) => {
-      const yy = i * rowH + 4, bw = Math.max(2, (x.calls / max) * track);
+      const yy = i * rowH + 4;
+      // 0 lượt thì KHÔNG vẽ thanh tối thiểu 2px — một vạch mờ trông y hệt "có
+      // gọi một tí", mà sự thật là chưa ai gọi. Để trống và ghi chữ.
+      if (!x.calls) {
+        s += `<text x="0" y="${yy + 12}" font-size="12.5" fill="var(--ink-3)" class="mono">${esc(x.name)}</text>`;
+        s += `<line x1="${LW}" x2="${LW + track}" y1="${yy + 8}" y2="${yy + 8}" stroke="var(--grid)" stroke-width="2"/>`;
+        s += `<text x="${LW + track + 7}" y="${yy + 12}" font-size="11" fill="var(--ink-3)">chưa gọi</text>`;
+        return;
+      }
+      const bw = Math.max(2, (x.calls / max) * track);
       // Cùng luật với cột theo ngày: phần xanh là lượt chạy được, phần đỏ nối
       // đuôi là lượt người dùng không dùng được. Tool đang hỏng thật lộ ra ngay
       // ở đây; tool chỉ bị Lark từ chối vì thiếu quyền thì vẫn xanh nguyên.
@@ -342,13 +368,18 @@
       s += `<text x="${LW + bw + 7}" y="${yy + 12}" font-size="11" font-weight="600" fill="var(--ink-2)" class="num">${nf(x.calls)}</text>`;
     });
     $('c-tools').innerHTML = LEGEND(t.some((x) => x.blocked)) +
-      `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Tool dùng nhiều nhất">${s}</svg>`;
+      `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Tool theo lượt gọi">${s}</svg>`;
     $('c-tools').querySelectorAll('.br').forEach((el) => {
       const x = t[+el.dataset.i];
       bindTip(el, `<b>${esc(x.name)}</b><br>${nf(x.calls)} lượt · p95 ${ms(x.p95)}` +
         (x.blocked ? `<br>${nf(x.blocked)} không dùng được (${String(x.blockRate).replace('.', ',')}%)` : ''));
     });
-  })();
+  };
+  drawTools();
+  $('f-toolrank').onclick = (e) => {
+    const b = e.target.closest('button');
+    if (b) { toolRank = b.dataset.v; drawTools(); }
+  };
 
   const count = (id, n) => { if ($(id)) $(id).textContent = n ? `· ${nf(n)}` : ''; };
 
@@ -400,11 +431,6 @@
   };
   drawPeople();
 
-  // ── tool chưa dùng ───────────────────────────────────────────────────
-  count('unused-n', DATA.unused.length);
-  $('unused').innerHTML = DATA.unused.length
-    ? DATA.unused.map((n) => `<span class="tag mono">${esc(n)}</span>`).join('')
-    : '<div class="ok-empty"><span class="ic">●</span>Mọi tool đều đã có người gọi.</div>';
 
   // ── canary ───────────────────────────────────────────────────────────
   const cp = DATA.canaryProbes || [];

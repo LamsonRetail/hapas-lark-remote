@@ -115,6 +115,23 @@ export async function computeDashboard({ sb, toolNames, appId, windowDays = 30 }
   const retired = [...toolMap.keys()].filter((n) => !all.includes(n)).sort();
 
   /**
+   * Tool chưa ai gọi cũng là MỘT DÒNG trong `tools`, với calls = 0.
+   *
+   * Trước đây chúng nằm ở thẻ riêng "Tool chưa ai gọi" dưới dạng đám nhãn —
+   * cùng một câu hỏi ("tool nào ít được dùng") bị tách làm hai chỗ, mà ranh
+   * giới giữa "gọi 1 lần" với "gọi 0 lần" thì không đáng một thẻ riêng. Gộp
+   * vào đây thì bộ lọc "ít nhất" trả lời luôn cả hai.
+   *
+   * Nối SAU khi đã đếm `usedCurrent`/`retired` — hai số đó đọc chính `toolMap`
+   * để biết tool nào CÓ người gọi; thêm dòng 0 lượt vào trước là biến
+   * "38/60 đã dùng" thành "60/60".
+   */
+  tools.push(...unused.map((name) => ({
+    name, calls: 0, blocked: 0, blockRate: 0, p95: null,
+    lastOk: null, lastBlocked: null, broken: false,
+  })));
+
+  /**
    * MỘT bảng, khoá là NGƯỜI (`open_id`) — hợp của hai nguồn:
    *
    *   audit_logs  → ai đã GỌI tool     (open_id)
