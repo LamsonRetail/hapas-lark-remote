@@ -16,8 +16,12 @@ const quant = (s, q) => (s.length ? s[Math.min(s.length - 1, Math.floor(s.length
 /** clientId của công cụ chạy tại chỗ — cùng danh sách computeDashboard loại ra. */
 export const SKIP_CLIENTS = new Set(['local-admin', 'canary', 'revoke-test-a']);
 
-/** Cột audit_logs cần đọc để tính được mọi phép đo trong MEASURES. */
-export const EXPLORE_COLS = ['created_at', 'tool_name', 'user_name', 'client_id', 'ok', 'duration_ms', 'lark_code', 'source'];
+/**
+ * Cột audit_logs cần đọc để tính được mọi phép đo trong MEASURES.
+ * `args` chỉ phục vụ impact.mjs (nhận ra tham số trỏ ra ngoài Lark) — không
+ * cột nào trong đó đi xuống trình duyệt, endpoint chỉ trả số đã gộp.
+ */
+export const EXPLORE_COLS = ['created_at', 'tool_name', 'user_name', 'client_id', 'ok', 'duration_ms', 'lark_code', 'source', 'args'];
 
 export function aggregate({ rows, dim: dimKey, include = 'tools', user = '' }) {
   const dim = DIM_BY_KEY.get(dimKey);

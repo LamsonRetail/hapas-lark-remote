@@ -16,8 +16,14 @@ chỉ là trả "không": thiếu quyền, sai tham số, quá hạn mức. Mode
 đó rồi gọi lại cho đúng hoặc đi đường khác, và người dùng không thấy gì cả.
 
 Chỉ đếm lượt **chặn người dùng** — lúc Lark không trả lời được (endpoint ra
-HTML/404, mạng đứt) và model buộc phải nói "không dùng được tool này". Vẫn trừ
-tiếp những lượt "được cứu": cùng người có lượt thành công trong 5 phút kế tiếp.
+HTML/404, mạng đứt) và model buộc phải nói "không dùng được tool này". Rồi trừ
+tiếp ba lớp nữa:
+
+| Trừ ra | Vì sao |
+|---|---|
+| Được cứu trong 5 phút | Cùng người có lượt thành công ngay sau đó — model đã tự đi đường khác |
+| `lark_api_call` | Cửa thoát hiểm, model tự đưa `path`. 404 là gõ sai đường dẫn, không phải hệ thống hỏng |
+| Tham số trỏ ra ngoài Lark | Đã gặp một lượt `sheets_table_get` nhận link **Google Sheets**. Chỉ trừ khi host KHÔNG thuộc Lark — link `.larksuite.com` hỏng thì vẫn tính, đó mới là thứ ta có trách nhiệm mở được |
 
 Chênh lệch không nhỏ: 30 ngày gần nhất có **51 lỗi thô nhưng chỉ 15 lượt thật sự
 chặn người dùng** — 11,1% so với 2,9%. Đếm kiểu thô thì bảng lúc nào cũng đỏ

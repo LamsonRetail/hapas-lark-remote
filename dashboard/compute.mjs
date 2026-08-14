@@ -52,7 +52,9 @@ export async function computeDashboard({ sb, toolNames, appId, windowDays = 30 }
   };
 
   const [raw, machines, canaryRow, sessionRow, hiddenRows] = await Promise.all([
-    page(`audit_logs?source=eq.url&created_at=gte.${since}&select=created_at,tool_name,user_name,open_id,client_id,ok,duration_ms,lark_code,error_msg&order=created_at.asc`),
+    // `args` chỉ để impact.mjs nhận ra tham số trỏ ra ngoài Lark. Nó KHÔNG đi
+    // xuống trình duyệt — computeDashboard chỉ trả về số đã gộp.
+    page(`audit_logs?source=eq.url&created_at=gte.${since}&select=created_at,tool_name,user_name,open_id,client_id,ok,duration_ms,lark_code,error_msg,args&order=created_at.asc`),
     // `display_name` chở theo client_id — xem ghi chú ở phần dựng chỗ cắm.
     page('machines?channel=eq.mcp%20remote&select=machine_id,username,user_id,client_app,display_name,status,installed_at,last_seen&order=last_seen.desc'),
     sb('audit_logs?source=eq.url&tool_name=eq.canary_heartbeat&select=created_at,ok,args&order=created_at.desc&limit=1'),
