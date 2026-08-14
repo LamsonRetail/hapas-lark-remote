@@ -32,6 +32,23 @@
     --elev: 0 1px 2px rgba(15, 23, 42, .05), 0 2px 8px rgba(15, 23, 42, .05);
     --elev-hi: 0 8px 24px rgba(15, 23, 42, .11);
   }
+  /* ── Thang chữ ──────────────────────────────────────────────────────────
+     BẢY cỡ, không hơn. Thêm một cỡ nữa là thêm một cấp mà mắt không phân biệt
+     nổi với cấp bên cạnh, và mọi thứ lại trông như đang cãi nhau.
+
+       fs-1  nhãn VIẾT HOA, chú thích nhỏ nhất
+       fs-2  chữ phụ / mờ
+       fs-3  bảng, nút, ô chọn
+       fs-4  chữ thường
+       fs-5  số nổi (đồng hồ, số trang, giá trị dải canh gác)
+       fs-6  số KPI, tiêu đề trang
+       fs-7  số KPI hero — chỉ dùng đúng một chỗ
+  */
+  :root {
+    --fs-1: 11px; --fs-2: 12.5px; --fs-3: 13.5px; --fs-4: 15px;
+    --fs-5: 21px; --fs-6: 27px; --fs-7: 36px;
+  }
+
   @media (prefers-color-scheme: dark) {
     :root:where(:not([data-theme="light"])) {
       color-scheme: dark;
@@ -57,7 +74,7 @@
 
   * { box-sizing: border-box; }
   body { margin: 0; background: var(--plane); color: var(--ink);
-    font-family: system-ui, -apple-system, "Segoe UI", sans-serif; font-size: 16px; line-height: 1.55;
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif; font-size: var(--fs-4); line-height: 1.55;
     -webkit-font-smoothing: antialiased; }
   /* 1200px trên màn 1440+ để lại hai dải trắng rộng bằng cả một cột bảng, mà
      bảng chỗ cắm bên trong thì phải cuộn ngang. Nới trần và cho padding co
@@ -68,17 +85,17 @@
   .num { font-variant-numeric: tabular-nums; }
 
   header { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-bottom: 4px; }
-  h1 { font-size: 26px; font-weight: 680; margin: 0; letter-spacing: -.02em; }
+  h1 { font-size: var(--fs-6); font-weight: 680; margin: 0; letter-spacing: -.02em; }
 
   /* Điều hướng giữa bảng vận hành và trang biểu đồ */
   .nav { display: flex; gap: 4px; margin-top: 9px; }
-  .nav a { font-size: 13px; font-weight: 600; text-decoration: none; padding: 5px 12px; border-radius: 999px;
+  .nav a { font-size: var(--fs-3); font-weight: 600; text-decoration: none; padding: 5px 12px; border-radius: 999px;
     color: var(--ink-2); background: transparent; border: 1px solid transparent; }
   .nav a:hover { background: var(--chip); color: var(--ink); }
   .nav a[aria-current] { background: var(--wash); color: color-mix(in srgb, var(--series-1) 70%, var(--ink));
     border-color: color-mix(in srgb, var(--series-1) 26%, transparent); }
   .head-right { display: flex; flex-direction: column; align-items: flex-end; gap: 8px; }
-  .clock { display: inline-flex; align-items: center; gap: 9px; font-size: 21px; font-weight: 700;
+  .clock { display: inline-flex; align-items: center; gap: 9px; font-size: var(--fs-5); font-weight: 700;
     letter-spacing: .01em; color: var(--ink); font-variant-numeric: tabular-nums; }
   .clock::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--good);
     box-shadow: 0 0 0 0 color-mix(in srgb, var(--good) 45%, transparent); animation: livepulse 2.2s infinite; }
@@ -90,7 +107,7 @@
   @media (prefers-reduced-motion: reduce) { .clock::before { animation: none; } }
 
   /* Nhãn tầng — mốc phân cấp CAO hơn tiêu đề thẻ, để mắt biết đang ở khu nào */
-  .zone { font-size: 11.5px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase;
+  .zone { font-size: var(--fs-2); font-weight: 700; letter-spacing: .06em; text-transform: uppercase;
     color: var(--ink-3); margin: 14px 2px 2px; display: flex; align-items: center; gap: 10px; }
   .zone::after { content: ""; flex: 1; height: 1px; background: var(--hairline); }
   .zone .n { color: var(--ink-3); font-weight: 600; }
@@ -98,9 +115,9 @@
   .card { background: var(--card); border: 1px solid var(--hairline); border-radius: 14px; box-shadow: var(--elev);
     transition: box-shadow .16s ease, transform .16s ease; }
   .pad { padding: 16px 18px; }
-  h2 { font-size: 11px; font-weight: 680; letter-spacing: .08em; text-transform: uppercase;
+  h2 { font-size: var(--fs-1); font-weight: 680; letter-spacing: .08em; text-transform: uppercase;
     color: var(--ink-3); margin: 0 0 13px; display: flex; align-items: baseline; gap: 7px; }
-  h2 .n { font-size: 11px; color: var(--ink-3); font-weight: 600; letter-spacing: 0; text-transform: none; }
+  h2 .n { font-size: var(--fs-1); color: var(--ink-3); font-weight: 600; letter-spacing: 0; text-transform: none; }
 
   .g2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
   /* Ô đầu rộng hơn vì nó là ô hero. Năm cột từ khi tách "Lỗi" ra riêng — gộp
@@ -111,7 +128,7 @@
   @media (max-width: 560px) { .g4 { grid-template-columns: 1fr; } }
 
   /* ── Phán quyết + dải trạng thái (Tầng 1) ── */
-  .verdict { display: inline-flex; align-items: center; gap: 9px; font-weight: 650; font-size: 13.5px;
+  .verdict { display: inline-flex; align-items: center; gap: 9px; font-weight: 650; font-size: var(--fs-3);
     padding: 8px 16px 8px 13px; border-radius: 999px;
     background: color-mix(in srgb, var(--sev) 12%, var(--card));
     border: 1px solid color-mix(in srgb, var(--sev) 30%, transparent);
@@ -125,29 +142,29 @@
   .statusbar .item:first-child { border-top: 0; }
   @media (min-width: 720px) { .statusbar .item { border-top: 0; border-right: 1px solid var(--hairline); }
     .statusbar .item:last-child { border-right: 0; } }
-  .statusbar .ic { color: var(--sev); font-size: 12px; line-height: 1.7; }
-  .statusbar .k { font-size: 11.5px; color: var(--ink-3); font-weight: 500; }
-  .statusbar .v { font-size: 16px; font-weight: 660; letter-spacing: -.01em; margin-top: 1px; }
-  .statusbar .d { font-size: 12px; color: var(--ink-2); margin-top: 2px; }
+  .statusbar .ic { color: var(--sev); font-size: var(--fs-2); line-height: 1.7; }
+  .statusbar .k { font-size: var(--fs-2); color: var(--ink-3); font-weight: 500; }
+  .statusbar .v { font-size: var(--fs-4); font-weight: 660; letter-spacing: -.01em; margin-top: 1px; }
+  .statusbar .d { font-size: var(--fs-2); color: var(--ink-2); margin-top: 2px; }
 
   /* ── KPI (Tầng 2) ── */
   .kpi { padding: 15px 17px; display: flex; flex-direction: column; }
   .kpi:hover { box-shadow: var(--elev-hi); transform: translateY(-2px); }
-  .kpi .k { font-size: 11.5px; color: var(--ink-3); font-weight: 500; }
-  .kpi .v { font-size: 27px; font-weight: 680; letter-spacing: -.025em; line-height: 1.1; margin-top: 4px; }
-  .kpi .d { font-size: 11.5px; color: var(--ink-3); margin-top: auto; padding-top: 4px; }
+  .kpi .k { font-size: var(--fs-2); color: var(--ink-3); font-weight: 500; }
+  .kpi .v { font-size: var(--fs-6); font-weight: 680; letter-spacing: -.025em; line-height: 1.1; margin-top: 4px; }
+  .kpi .d { font-size: var(--fs-2); color: var(--ink-3); margin-top: auto; padding-top: 4px; }
   .kpi.hero { background:
       linear-gradient(150deg, color-mix(in srgb, var(--series-1) 13%, var(--card)), color-mix(in srgb, var(--series-1) 3%, var(--card)));
     border-color: color-mix(in srgb, var(--series-1) 22%, transparent); }
-  .kpi.hero .v { font-size: 34px; color: color-mix(in srgb, var(--series-1) 72%, var(--ink)); }
-  .kpi .v small { font-size: 15px; font-weight: 600; color: var(--ink-3); letter-spacing: 0; }
+  .kpi.hero .v { font-size: var(--fs-7); color: color-mix(in srgb, var(--series-1) 72%, var(--ink)); }
+  .kpi .v small { font-size: .68em; font-weight: 640; color: var(--ink-2); letter-spacing: 0; }
 
   /* Ô bảng trước đây chỉ có đệm PHẢI (`7px 10px 7px 0`), nên cột này chạm sát
      chữ cột kia — ở bảng chỗ cắm 7 cột thì đọc thành một dải chữ liền. Đệm đều
      hai bên, và `.scroll table` có bề rộng tối thiểu để màn hẹp thì cuộn ngang
      chứ không bóp các cột dí vào nhau. */
-  table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
-  th { text-align: left; font-weight: 600; font-size: 11px; letter-spacing: .05em; text-transform: uppercase;
+  table { width: 100%; border-collapse: collapse; font-size: var(--fs-3); }
+  th { text-align: left; font-weight: 600; font-size: var(--fs-1); letter-spacing: .05em; text-transform: uppercase;
     color: var(--ink-3); padding: 0 14px 8px; border-bottom: 1px solid var(--rule); white-space: nowrap; }
   td { padding: 10px 14px; border-bottom: 1px solid var(--grid); vertical-align: middle; }
   th:first-child, td:first-child { padding-left: 0; }
@@ -164,12 +181,12 @@
   /* Nhãn phụ dưới giá trị chính trong một ô — client_id dưới tên ứng dụng.
      Xuống dòng riêng thay vì nối đuôi: chuỗi băm 22 ký tự đứng cạnh chữ
      "Claude" thì mắt không tách nổi đâu là tên app, đâu là mã. */
-  .sub { display: block; font-size: 11.5px; color: var(--ink-3); margin-top: 2px;
+  .sub { display: block; font-size: var(--fs-2); color: var(--ink-3); margin-top: 2px;
     max-width: 30ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
   /* Nút thao tác trong bảng — mờ lúc bình thường, rõ khi rê vào đúng dòng, để
      một bảng dùng để ĐỌC không biến thành bãi nút bấm. */
-  .btn { font: inherit; font-size: 12px; font-weight: 600; line-height: 1; cursor: pointer;
+  .btn { font: inherit; font-size: var(--fs-2); font-weight: 600; line-height: 1; cursor: pointer;
     padding: 6px 11px; border-radius: 8px; border: 1px solid var(--hairline);
     background: var(--card); color: var(--ink-2); }
   .btn:hover { background: var(--raise); color: var(--ink); }
@@ -181,24 +198,24 @@
   tbody tr:hover td .btn, td .btn:focus-visible { opacity: 1; }
   @media (hover: none) { td .btn { opacity: 1; } }
 
-  .pill { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; font-weight: 600;
+  .pill { display: inline-flex; align-items: center; gap: 5px; font-size: var(--fs-1); font-weight: 600;
     padding: 2px 8px; border-radius: 999px; background: var(--chip); color: var(--ink-2); white-space: nowrap; }
   .pill .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--sev, var(--ink-3)); flex: none; }
-  .tag { font-size: 11px; padding: 3px 7px; border-radius: 5px; background: var(--chip); color: var(--ink-2); }
+  .tag { font-size: var(--fs-1); padding: 3px 7px; border-radius: 5px; background: var(--chip); color: var(--ink-2); }
   .tags { display: flex; flex-wrap: wrap; gap: 5px; }
 
-  .legend { display: flex; gap: 13px; margin-bottom: 8px; font-size: 11.5px; color: var(--ink-2); }
+  .legend { display: flex; gap: 13px; margin-bottom: 8px; font-size: var(--fs-2); color: var(--ink-2); }
   .legend span { display: inline-flex; align-items: center; gap: 6px; }
   .legend i { width: 9px; height: 9px; border-radius: 2px; }
 
   svg { display: block; width: 100%; height: auto; overflow: visible; }
 
   /* Trạng thái rỗng — nói rõ "không có gì để xử lý" thay vì để trống khó hiểu */
-  .ok-empty { display: flex; align-items: center; gap: 9px; color: var(--ink-2); font-size: 13px; padding: 4px 0 2px; }
-  .ok-empty .ic { color: var(--good); font-size: 14px; }
+  .ok-empty { display: flex; align-items: center; gap: 9px; color: var(--ink-2); font-size: var(--fs-3); padding: 4px 0 2px; }
+  .ok-empty .ic { color: var(--good); font-size: var(--fs-4); }
 
   #tip { position: fixed; z-index: 30; pointer-events: none; opacity: 0; transition: opacity 90ms;
-    background: var(--ink); color: var(--card); font-size: 12px; padding: 6px 9px; border-radius: 6px; max-width: 250px; }
+    background: var(--ink); color: var(--card); font-size: var(--fs-2); padding: 6px 9px; border-radius: 6px; max-width: 250px; }
   #tip.on { opacity: 1; }
   @media (prefers-reduced-motion: reduce) { #tip { transition: none; } .card { transition: none; } }
 
@@ -207,9 +224,9 @@
    việc là "đổi cách nhìn", giấu chính cái cần bấm đi thì trang mất lý do tồn tại. */
 .controls { display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-end; }
 .field { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
-.field > label { font-size: 11px; font-weight: 680; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-3); }
+.field > label { font-size: var(--fs-1); font-weight: 680; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-3); }
 .field select {
-  font: inherit; font-size: 14px; color: var(--ink); background: var(--card);
+  font: inherit; font-size: var(--fs-4); color: var(--ink); background: var(--card);
   border: 1px solid var(--rule); border-radius: 9px; padding: 9px 34px 9px 12px; cursor: pointer;
   /* Mũi tên vẽ bằng gradient — không nhúng ảnh, không gọi ra ngoài (CSP của
      Vercel chặn host ngoài, mà bản preview thì không có mạng để mà gọi). */
@@ -224,12 +241,12 @@
 /* Nhóm nút một-lựa-chọn — dùng cho kiểu biểu đồ và cửa sổ ngày, nơi chỉ có
    2–3 giá trị. Bày hết ra rẻ hơn một lần bấm để mở danh sách. */
 .seg { display: inline-flex; background: var(--sunken); border: 1px solid var(--rule); border-radius: 9px; padding: 3px; gap: 3px; }
-.seg button { font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; white-space: nowrap;
+.seg button { font: inherit; font-size: var(--fs-3); font-weight: 600; cursor: pointer; white-space: nowrap;
   padding: 6px 13px; border-radius: 6px; border: 0; background: transparent; color: var(--ink-2); }
 .seg button:hover { color: var(--ink); }
 .seg button[aria-pressed="true"] { background: var(--card); color: var(--ink); box-shadow: var(--elev); }
 
-.chk { display: inline-flex; align-items: center; gap: 8px; font-size: 13.5px; color: var(--ink-2); cursor: pointer; padding-bottom: 9px; }
+.chk { display: inline-flex; align-items: center; gap: 8px; font-size: var(--fs-3); color: var(--ink-2); cursor: pointer; padding-bottom: 9px; }
 .chk input { width: 16px; height: 16px; accent-color: var(--series-1); cursor: pointer; }
 
 .spacer { flex: 1 1 auto; }
@@ -237,13 +254,13 @@
 /* Dải tóm tắt dưới thanh chọn: nói rõ đang nhìn bao nhiêu dòng, trong bao lâu.
    Không có nó thì một biểu đồ trống đọc thành "hệ thống chết" thay vì
    "khoảng thời gian này không có dữ liệu". */
-.summary { display: flex; flex-wrap: wrap; gap: 20px; font-size: 13px; color: var(--ink-2); }
+.summary { display: flex; flex-wrap: wrap; gap: 20px; font-size: var(--fs-3); color: var(--ink-2); }
 .summary b { color: var(--ink); font-weight: 660; font-variant-numeric: tabular-nums; }
 
 /* ── Chuyển trang dưới đáy bảng ──────────────────────────────────────────
    Chỉ hiện khi bảng thật sự tràn — "Trang 1/1" là một dòng chữ không nói gì. */
 .pager { display: flex; align-items: center; justify-content: flex-end; gap: 14px;
-  margin-top: 12px; padding-top: 11px; border-top: 1px solid var(--grid); font-size: 13px; }
+  margin-top: 12px; padding-top: 11px; border-top: 1px solid var(--grid); font-size: var(--fs-3); }
 .pager b { font-variant-numeric: tabular-nums; color: var(--ink); }
 
 /* Danh sách ứng dụng trong MỘT ô: xuống dòng thay vì kéo dài cột. Cao quá thì
@@ -254,12 +271,12 @@
 .statusbar .item[role="button"] { cursor: pointer; }
 .statusbar .item[role="button"]:hover { background: color-mix(in srgb, var(--sev) 9%, var(--card)); }
 .statusbar .item[role="button"]:focus-visible { outline: 2px solid var(--series-1); outline-offset: -2px; }
-.statusbar .k .more { margin-left: 8px; font-size: 10.5px; font-weight: 700; letter-spacing: .04em;
+.statusbar .k .more { margin-left: 8px; font-size: var(--fs-1); font-weight: 700; letter-spacing: .04em;
   color: color-mix(in srgb, var(--series-1) 75%, var(--ink-3)); }
 
 /* Số trang: to và rõ, vì đó là thứ mắt tìm khi bấm qua lại. */
-.pnum { font-size: 15px; color: var(--ink-2); font-variant-numeric: tabular-nums; }
-.pnum b { font-size: 19px; font-weight: 700; color: var(--ink); }
+.pnum { font-size: var(--fs-4); color: var(--ink-2); font-variant-numeric: tabular-nums; }
+.pnum b { font-size: var(--fs-5); font-weight: 700; color: var(--ink); }
 </style>
 
 <div class="wrap">
@@ -546,7 +563,7 @@
     let s = '';
     for (let t = 0; t <= top; t += step) {
       s += `<line x1="${PL}" x2="${W - PR}" y1="${y(t)}" y2="${y(t)}" stroke="var(--grid)" stroke-width="1"/>`;
-      s += `<text x="${PL - 7}" y="${y(t) + 4}" text-anchor="end" font-size="11.5" fill="var(--ink-3)" class="num">${nf(t)}</text>`;
+      s += `<text x="${PL - 7}" y="${y(t) + 4}" text-anchor="end" font-size="12.5" fill="var(--ink-3)" class="num">${nf(t)}</text>`;
     }
     s += `<line x1="${PL}" x2="${W - PR}" y1="${y(0)}" y2="${y(0)}" stroke="var(--rule)" stroke-width="1"/>`;
 
@@ -565,8 +582,8 @@
       // Vùng bắt chuột phủ cả cột — bắt theo từng khối thì tooltip nhấp nháy
       // mỗi lần con trỏ đi qua ranh giới xanh/đỏ.
       s += `<rect class="sg" x="${x0}" y="${y(x.calls)}" width="${bw}" height="${Math.max(2, y(0) - y(x.calls))}" fill="transparent" data-i="${i}"/>`;
-      s += `<text x="${cx(i)}" y="${y(x.calls) - 5}" text-anchor="middle" font-size="13" font-weight="660" fill="var(--ink-2)" class="num">${nf(x.calls)}</text>`;
-      s += `<text x="${cx(i)}" y="${H - 9}" text-anchor="middle" font-size="12" fill="var(--ink-3)" class="num">${day2(x.day)}</text>`;
+      s += `<text x="${cx(i)}" y="${y(x.calls) - 5}" text-anchor="middle" font-size="13.5" font-weight="660" fill="var(--ink-2)" class="num">${nf(x.calls)}</text>`;
+      s += `<text x="${cx(i)}" y="${H - 9}" text-anchor="middle" font-size="12.5" fill="var(--ink-3)" class="num">${day2(x.day)}</text>`;
     });
     // Chú giải chỉ hiện khi thật sự có màu thứ hai trên biểu đồ. Không ngày nào
     // bị chặn thì hai ô màu chỉ tổ làm người đọc đi tìm phần đỏ không tồn tại.
@@ -594,7 +611,7 @@
       // ở đây; tool chỉ bị Lark từ chối vì thiếu quyền thì vẫn xanh nguyên.
       const ew = x.blocked ? Math.max(2, (x.blocked / max) * track) : 0;
       const ok = Math.max(0, bw - ew);
-      s += `<text x="0" y="${yy + 12}" font-size="11.5" fill="var(--ink-2)" class="mono">${esc(x.name)}</text>`;
+      s += `<text x="0" y="${yy + 12}" font-size="12.5" fill="var(--ink-2)" class="mono">${esc(x.name)}</text>`;
       s += `<rect x="${LW}" y="${yy + 2}" width="${bw}" height="12" rx="4" fill="var(--critical)"/>`;
       s += ok > 0 ? `<rect x="${LW}" y="${yy + 2}" width="${ok}" height="12" rx="4" fill="var(--good)"/>` : '';
       s += `<rect x="${LW}" y="${yy + 2}" width="${Math.min(bw, 4)}" height="12" fill="var(--${ok > 0 ? 'good' : 'critical'})"/>`;
@@ -864,6 +881,7 @@
       `<span>Nguồn dữ liệu <b>${nf(EX.total)}</b> lượt gọi</span>`,
       `<span>Gộp thành <b>${nf(EX.groups)}</b> nhóm</span>`,
       `<span>Cửa sổ <b>${state.days}</b> ngày</span>`,
+      EX.skipped ? `<span>Bỏ qua <b>${nf(EX.skipped)}</b> lượt chưa ghi cột này</span>` : '',
       EX.user ? `<span>Đang lọc <b>1</b>/${nf(EX.users.length)} người</span>` : '',
       cutN > 0 ? `<span>Biểu đồ hiện <b>${nf(shown.length)}</b> nhóm lớn nhất, còn <b>${nf(cutN)}</b> ở bảng dưới</span>` : '',
     ].filter(Boolean).join('');
@@ -898,7 +916,7 @@
     rows.forEach((r, i) => {
       const y = i * rowH + 5;
       const w = max > 0 ? Math.max(2, (r[me.key] / max) * track) : 2;
-      s += `<text x="0" y="${y + 14}" font-size="13" fill="var(--ink-2)">${esc(cut(r.key, 34))}</text>`;
+      s += `<text x="0" y="${y + 14}" font-size="13.5" fill="var(--ink-2)">${esc(cut(r.key, 34))}</text>`;
       s += `<rect data-i="${i}" x="${LW}" y="${y + 3}" width="${w}" height="16" rx="5" fill="${fill(r)}"/>`;
       s += `<rect x="${LW}" y="${y + 3}" width="${Math.min(w, 5)}" height="16" fill="${fill(r)}"/>`;
       s += `<text x="${LW + w + 9}" y="${y + 15}" font-size="12.5" font-weight="600" fill="var(--ink-2)" class="num">${esc(fmt(r[me.key], me.fmt))}</text>`;
@@ -930,7 +948,7 @@
       const lb = esc(cut(r.key, 16));
       s += String(r.key).length > 6
         ? `<text x="${cx(i)}" y="${H - PB + 18}" font-size="11" fill="var(--ink-3)" text-anchor="end" transform="rotate(-40 ${cx(i)} ${H - PB + 18})">${lb}</text>`
-        : `<text x="${cx(i)}" y="${H - PB + 18}" font-size="11.5" fill="var(--ink-3)" text-anchor="middle">${lb}</text>`;
+        : `<text x="${cx(i)}" y="${H - PB + 18}" font-size="12.5" fill="var(--ink-3)" text-anchor="middle">${lb}</text>`;
     });
     return `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMinYMid meet" role="img" aria-label="${esc(me.label)}" style="max-width:${W}px">${s}</svg>`;
   }

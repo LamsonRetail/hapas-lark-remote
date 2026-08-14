@@ -58,15 +58,26 @@ export function aggregate({ rows, dim: dimKey, include = 'tools', user = '' }) {
     if (dim.key === 'day') return r.created_at.slice(0, 10);
     if (dim.key === 'hour') return r.created_at.slice(11, 13) + ':00';
     if (dim.key === 'ok') return r.ok === false ? 'Lỗi' : 'Thành công';
-    // Cột client_app mới có từ 14/08; dòng cũ hơn không có gì để nhóm, nói
-    // thẳng ra thay vì gộp chung vào '(trống)' rồi bị đọc thành 'không rõ app'.
-    if (dim.key === 'client_app') return r.client_app || '(trước 14/08)';
+    // null = dòng ghi trước khi có cột client_app. Trả null để BỎ HẲN khỏi
+    // phép nhóm, xem `skipped` bên dưới.
+    if (dim.key === 'client_app') return r.client_app || null;
     return r[dim.col] || '(trống)';
   };
 
+  /**
+   * Dòng không có giá trị cho cột đang nhóm thì BỎ, không gom vào một nhóm
+   * "(trống)".
+   *
+   * Đã thử gom: cột client_app mới ghi được từ 14/08 nên 99% dòng rơi vào một
+   * nhóm khổng lồ, cạnh đó là hai cột con con "Claude 3" và "Codex 1". Biểu đồ
+   * đọc thành "hầu hết lượt gọi đến từ một ứng dụng tên là (trước 14/08)" —
+   * sai hoàn toàn. Số bị bỏ vẫn báo ra ở `skipped` để trang nói rõ.
+   */
+  let skipped = 0;
   const g = new Map();
   for (const r of kept) {
     const k = keyOf(r);
+    if (k === null) { skipped++; continue; }
     const e = g.get(k) || { key: k, calls: 0, blocked: 0, ms: [], users: new Set(), tools: new Set(), last: null };
     e.calls++;
     if (blocked.has(r)) e.blocked++;
@@ -90,5 +101,5 @@ export function aggregate({ rows, dim: dimKey, include = 'tools', user = '' }) {
   // lượt gọi để cái đáng nhìn nằm trên đầu.
   out.sort(dim.time ? (a, b) => a.key.localeCompare(b.key) : (a, b) => b.calls - a.calls);
 
-  return { dim: dim.key, include, user, users, total: kept.length, groups: out.length, rows: out };
+  return { dim: dim.key, include, user, users, total: kept.length - skipped, skipped, groups: out.length, rows: out };
 }
