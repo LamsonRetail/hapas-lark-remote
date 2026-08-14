@@ -51,6 +51,25 @@ export async function fetchRetry(url, init, { tries = 3, timeoutMs = 30000 } = {
   throw last;
 }
 
+/**
+ * Lark báo quá tần suất bằng HTTP **200** kèm mã trong THÂN, không phải 429.
+ * `fetchRetry` chỉ nhìn mã HTTP nên nó không thấy gì để thử lại, và tool hỏng
+ * ngay lần đầu — dù đây đúng là loại lỗi chỉ cần chờ vài giây là qua.
+ *
+ * Đã gặp thật trong audit: `mail_message` 7 lượt `5000: [15120000] hit rate
+ * limit`, `drive_search` 2 lượt `9499: too many request`.
+ *
+ * Nhận diện bằng mã 9499 HOẶC câu chữ, không bắt theo mã 5000: 5000 là mã
+ * chung của vài API Lark, bắt cả nó là thử lại nhầm những lỗi không bao giờ
+ * tự khỏi. Chỉ khẳng định thứ đã thấy tận mắt.
+ *
+ * Thử lại an toàn với MỌI động từ: bị chặn tần suất nghĩa là Lark chưa xử lý
+ * request, không có gì để nhân đôi.
+ */
+const isRateLimited = (code, msg) => code === 9499 || /rate limit|too many request/i.test(msg || '');
+const RATE_TRIES = 3;
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
 export async function larkApi(method, apiPath, { params, body, token, raw = false, timeoutMs = 30000 } = {}) {
   const url = new URL(config.openBase + apiPath);
   if (params) {
@@ -59,32 +78,43 @@ export async function larkApi(method, apiPath, { params, body, token, raw = fals
     }
   }
 
-  const res = await fetchRetry(
-    url,
-    {
-      method,
-      headers: {
-        'Content-Type': 'application/json; charset=utf-8',
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+  for (let attempt = 0; ; attempt++) {
+    const res = await fetchRetry(
+      url,
+      {
+        method,
+        headers: {
+          'Content-Type': 'application/json; charset=utf-8',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: body === undefined ? undefined : JSON.stringify(body),
       },
-      body: body === undefined ? undefined : JSON.stringify(body),
-    },
-    { timeoutMs },
-  );
+      { timeoutMs },
+    );
 
-  if (raw) return res; // cho download file
+    if (raw) return res; // cho download file
 
-  const text = await res.text();
-  let json;
-  try {
-    json = JSON.parse(text);
-  } catch {
-    // Gọi nhầm host trả về HTML — từng làm chết poller device flow lúc dựng
-    throw new LarkError('non_json', `${res.status} không phải JSON: ${text.slice(0, 120)}`, res.status);
+    const text = await res.text();
+    let json;
+    try {
+      json = JSON.parse(text);
+    } catch {
+      // Gọi nhầm host trả về HTML — từng làm chết poller device flow lúc dựng
+      throw new LarkError('non_json', `${res.status} không phải JSON: ${text.slice(0, 120)}`, res.status);
+    }
+
+    if (json.code !== undefined && json.code !== 0) {
+      if (isRateLimited(json.code, json.msg) && attempt < RATE_TRIES - 1) {
+        // Chờ lâu hơn hẳn backoff của fetchRetry: hạn mức Lark tính theo giây,
+        // thử lại sau 400ms thì chỉ tốn thêm một lượt vẫn bị chặn.
+        await sleep(1000 * 2 ** attempt + Math.floor(Math.random() * 300));
+        continue;
+      }
+      throw new LarkError(json.code, json.msg, res.status);
+    }
+    if (json.error) throw new LarkError(json.error, json.error_description || '', res.status);
+    return stripInstructions(json);
   }
-  if (json.code !== undefined && json.code !== 0) throw new LarkError(json.code, json.msg, res.status);
-  if (json.error) throw new LarkError(json.error, json.error_description || '', res.status);
-  return stripInstructions(json);
 }
 
 /** Thay `--page-all` của CLI. */
