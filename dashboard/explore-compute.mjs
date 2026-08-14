@@ -1,4 +1,5 @@
 import { DIM_BY_KEY } from './explore-schema.mjs';
+import { impactedSet } from './impact.mjs';
 
 /**
  * Gộp hàng audit_logs thô theo MỘT cột.
@@ -41,6 +42,13 @@ export function aggregate({ rows, dim: dimKey, include = 'tools', user = '' }) {
   // bóc tách thứ hai mà một cột nhóm đơn lẻ không trả lời được.
   const kept = user ? inScope.filter((r) => r.user_name === user) : inScope;
 
+  /**
+   * Tính trên inScope chứ không trên `kept`: luật "được cứu" cần lượt thành
+   * công của chính người đó, mà lọc theo cột khác (ví dụ chỉ xem mã lỗi) có
+   * thể cắt mất đúng những lượt đó và biến một lỗi đã được cứu thành lỗi thật.
+   */
+  const blocked = impactedSet(inScope);
+
   /** Nhãn nhóm. `ok` là boolean, `lark_code` hay null — cả hai cần chữ, không phải "null"/"false". */
   const keyOf = (r) => {
     if (dim.key === 'day') return r.created_at.slice(0, 10);
@@ -52,9 +60,9 @@ export function aggregate({ rows, dim: dimKey, include = 'tools', user = '' }) {
   const g = new Map();
   for (const r of kept) {
     const k = keyOf(r);
-    const e = g.get(k) || { key: k, calls: 0, errors: 0, ms: [], users: new Set(), tools: new Set(), last: null };
+    const e = g.get(k) || { key: k, calls: 0, blocked: 0, ms: [], users: new Set(), tools: new Set(), last: null };
     e.calls++;
-    if (r.ok === false) e.errors++;
+    if (blocked.has(r)) e.blocked++;
     if (r.duration_ms != null) e.ms.push(r.duration_ms);
     if (r.user_name) e.users.add(r.user_name);
     if (r.tool_name) e.tools.add(r.tool_name);
@@ -65,7 +73,7 @@ export function aggregate({ rows, dim: dimKey, include = 'tools', user = '' }) {
   const out = [...g.values()].map((e) => {
     const s = e.ms.sort((a, b) => a - b);
     return {
-      key: e.key, calls: e.calls, errors: e.errors, errRate: pct(e.errors, e.calls),
+      key: e.key, calls: e.calls, blocked: e.blocked, blockRate: pct(e.blocked, e.calls),
       p50: quant(s, 0.5), p95: quant(s, 0.95),
       users: e.users.size, tools: e.tools.size, last: e.last,
     };

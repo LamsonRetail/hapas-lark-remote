@@ -107,7 +107,10 @@ write('explore.html', DOCTYPE + build('explore-template.html', { extra: { SCHEMA
 write('tools.json', JSON.stringify(TOOLS.map((t) => t.name).sort()));
 
 console.log(`lượt gọi      : ${data.kpi.calls}`);
-console.log(`lỗi           : ${data.kpi.errors} (${data.kpi.errRate}%) — Lark không phản hồi ${data.kpi.noResp} (${data.kpi.noRespRate}%)`);
+console.log(`không dùng được: ${data.kpi.blocked} (${data.kpi.blockRate}%) — chỉ đếm lượt CHẶN người dùng, xem impact.mjs`);
+// Chỉ in ra ĐÂY, không đưa lên trang — xem ghi chú ở cuối compute.mjs.
+const broken = data.tools.filter((t) => t.broken).map((t) => t.name);
+console.log(`nghi hỏng      : ${broken.length ? broken.join(', ') : 'không có'} (kiểm tay, canary mới là nguồn tin)`);
 console.log(`tool          : ${data.kpi.toolsUsed}/${data.kpi.toolsTotal} đã dùng, ${data.unused.length} chưa`);
 console.log(`chỗ cắm       : ${data.connectors.length} hiện, ${data.hidden.length} đang ẩn`);
 console.log(`người          : ${data.kpi.connected} đã cắm, ${data.kpi.users} đã gọi tool`);

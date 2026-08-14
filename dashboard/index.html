@@ -385,6 +385,16 @@
     }
   }
 
+  /**
+   * Chú giải hai màu, chỉ vẽ khi biểu đồ THẬT SỰ có phần đỏ. Xanh lá không
+   * phải "tốt", nó là "chạy được"; đỏ không phải "lỗi", nó là "người dùng
+   * không dùng được" — hai chữ đó khác nhau và bảng này chỉ đếm chữ thứ hai.
+   */
+  const LEGEND = (show) => (show
+    ? '<div class="legend"><span><i style="background:var(--good)"></i>Chạy được</span>' +
+      '<span><i style="background:var(--critical)"></i>Không dùng được</span></div>'
+    : '');
+
   function render(DATA) {
   LAST = DATA;
   // ── canh gác + phán quyết tổng ───────────────────────────────────────
@@ -420,13 +430,14 @@
 
   // ── KPI ──────────────────────────────────────────────────────────────
   const k = DATA.kpi;
-  // Ngưỡng của "Lark không phản hồi", không phải của tổng lỗi: phần lớn lỗi là
-  // người dùng thiếu quyền hoặc nhập sai — tô đỏ vì chúng là báo động giả.
-  const errSev = k.noRespRate >= 5 ? 'critical' : k.noRespRate > 0 ? 'warning' : 'good';
+  // Chỉ đếm lượt CHẶN người dùng — lúc model phải nói "không dùng được tool
+  // này". Thiếu quyền, sai tham số, quá hạn mức đều là Lark đã trả lời và model
+  // đi tiếp được, đưa lên đây thì bảng lúc nào cũng đỏ trong khi tool chạy mượt.
+  const blockSev = k.blockRate >= 5 ? 'critical' : k.blocked ? 'warning' : 'good';
   $('kpi').innerHTML = [
     { hero: 1, k: 'Lượt gọi', v: nf(k.calls), d: `${DATA.daily.length} ngày có dữ liệu` },
-    { k: 'Lỗi', v: nf(k.errors), sev: errSev,
-      d: `${String(k.errRate).replace('.', ',')}% tổng lượt · Lark không đáp ${nf(k.noResp)}` },
+    { k: 'Không dùng được', v: nf(k.blocked), sev: blockSev,
+      d: k.blocked ? `${String(k.blockRate).replace('.', ',')}% lượt gọi bị chặn` : 'Không lượt nào bị chặn' },
     // "Đã cắm" là số người ĐĂNG NHẬP được, "đã gọi" là số người thật sự dùng.
     // Chênh lệch giữa hai số là thứ cần biết khi vừa phát link cho phòng ban.
     { k: 'Người đã cắm', v: nf(k.connected ?? k.users), d: `${nf(k.users)} người đã gọi tool` },
@@ -465,10 +476,10 @@
       `<rect x="${x0}" y="${yT + Math.max(0, Math.max(2, h) - 4)}" width="${bw}" height="4" fill="${color}"/>`;
 
     d.forEach((x, i) => {
-      // Cột CHỒNG: thành công xanh ở dưới, lỗi đỏ ở trên. Một cột đơn sắc chỉ
-      // nói được "hôm đó bận hay rảnh"; chồng lên thì nó nói luôn "hôm đó có
-      // trục trặc không" — mà đó mới là câu người mở dashboard đang hỏi.
-      const x0 = cx(i) - bw / 2, okN = x.calls - x.errors;
+      // Cột CHỒNG: chạy được xanh ở dưới, bị chặn đỏ ở trên. Một cột đơn sắc
+      // chỉ nói được "hôm đó bận hay rảnh"; chồng lên thì nó nói luôn "hôm đó
+      // có ai không dùng được không" — mà đó mới là câu đang hỏi.
+      const x0 = cx(i) - bw / 2, okN = x.calls - x.blocked;
       s += block(x0, y(okN), y(0) - y(okN), 'var(--good)');
       s += block(x0, y(x.calls), y(okN) - y(x.calls), 'var(--critical)');
       // Vùng bắt chuột phủ cả cột — bắt theo từng khối thì tooltip nhấp nháy
@@ -477,14 +488,14 @@
       s += `<text x="${cx(i)}" y="${y(x.calls) - 5}" text-anchor="middle" font-size="10.5" font-weight="600" fill="var(--ink-2)" class="num">${nf(x.calls)}</text>`;
       s += `<text x="${cx(i)}" y="${H - 7}" text-anchor="middle" font-size="10" fill="var(--ink-3)" class="num">${day2(x.day)}</text>`;
     });
-    $('c-daily').innerHTML =
-      (d.some((x) => x.errors)
-        ? '<div class="legend"><span><i style="background:var(--good)"></i>Thành công</span><span><i style="background:var(--critical)"></i>Lỗi</span></div>'
-        : '') +
+    // Chú giải chỉ hiện khi thật sự có màu thứ hai trên biểu đồ. Không ngày nào
+    // bị chặn thì hai ô màu chỉ tổ làm người đọc đi tìm phần đỏ không tồn tại.
+    $('c-daily').innerHTML = LEGEND(d.some((x) => x.blocked)) +
       `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMinYMid meet" role="img" aria-label="Lượt gọi theo ngày" style="max-width:${W}px">${s}</svg>`;
     $('c-daily').querySelectorAll('.sg').forEach((el) => {
       const x = d[+el.dataset.i];
-      bindTip(el, `<b>${day2(x.day)}</b><br>${nf(x.calls - x.errors)} thành công<br>${nf(x.errors)} lỗi`);
+      bindTip(el, `<b>${day2(x.day)}</b><br>${nf(x.calls)} lượt gọi` +
+        (x.blocked ? `<br>${nf(x.blocked)} không dùng được` : ''));
     });
   })();
 
@@ -499,9 +510,9 @@
     t.forEach((x, i) => {
       const yy = i * rowH + 4, bw = Math.max(2, (x.calls / max) * track);
       // Cùng luật với cột theo ngày: phần xanh là lượt chạy được, phần đỏ nối
-      // đuôi là lượt lỗi. Tool hỏng lộ ra ngay ở đây thay vì phải dò bảng "đang
-      // hỏng" ở dưới.
-      const ew = x.errors ? Math.max(2, (x.errors / max) * track) : 0;
+      // đuôi là lượt người dùng không dùng được. Tool đang hỏng thật lộ ra ngay
+      // ở đây; tool chỉ bị Lark từ chối vì thiếu quyền thì vẫn xanh nguyên.
+      const ew = x.blocked ? Math.max(2, (x.blocked / max) * track) : 0;
       const ok = Math.max(0, bw - ew);
       s += `<text x="0" y="${yy + 12}" font-size="11.5" fill="var(--ink-2)" class="mono">${esc(x.name)}</text>`;
       s += `<rect x="${LW}" y="${yy + 2}" width="${bw}" height="12" rx="4" fill="var(--critical)"/>`;
@@ -510,32 +521,34 @@
       s += `<rect class="br" x="${LW}" y="${yy + 2}" width="${bw}" height="12" fill="transparent" data-i="${i}"/>`;
       s += `<text x="${LW + bw + 7}" y="${yy + 12}" font-size="11" font-weight="600" fill="var(--ink-2)" class="num">${nf(x.calls)}</text>`;
     });
-    $('c-tools').innerHTML =
-      (t.some((x) => x.errors)
-        ? '<div class="legend"><span><i style="background:var(--good)"></i>Thành công</span><span><i style="background:var(--critical)"></i>Lỗi</span></div>'
-        : '') +
+    $('c-tools').innerHTML = LEGEND(t.some((x) => x.blocked)) +
       `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Tool dùng nhiều nhất">${s}</svg>`;
     $('c-tools').querySelectorAll('.br').forEach((el) => {
       const x = t[+el.dataset.i];
-      bindTip(el, `<b>${esc(x.name)}</b><br>${nf(x.calls)} lượt · ${nf(x.errors)} lỗi (${x.errRate}%)<br>p95 ${ms(x.p95)}`);
+      bindTip(el, `<b>${esc(x.name)}</b><br>${nf(x.calls)} lượt · p95 ${ms(x.p95)}` +
+        (x.blocked ? `<br>${nf(x.blocked)} không dùng được (${String(x.blockRate).replace('.', ',')}%)` : ''));
     });
   })();
 
   const count = (id, n) => { if ($(id)) $(id).textContent = n ? `· ${nf(n)}` : ''; };
 
   // ── người dùng ───────────────────────────────────────────────────────
-  // Cột "Lỗi" tô theo tỉ lệ của CHÍNH người đó. Trước đây bảng này chỉ đếm
-  // lượt gọi, nên một người gọi nhiều và một người gọi nhiều mà hỏng liên tục
-  // trông y hệt nhau. Số 0 để mờ — xanh lá chỉ dành cho thứ đã kiểm và ổn,
-  // không phải cho ô trống.
-  const uSev = (u) => (!u.errors ? '' : u.errors / u.calls >= 0.2 ? 'critical' : 'warning');
+  // Cột "Không dùng được" CHỈ hiện khi có người thật sự bị chặn. Một cột toàn
+  // số 0 không nói gì mà vẫn bắt mắt dừng lại đọc — đúng thứ cần bỏ.
+  const anyBlocked = DATA.users.some((u) => u.blocked);
   count('users-n', DATA.users.length);
   $('t-users').innerHTML =
-    '<thead><tr><th>Người</th><th class="r">Lượt</th><th class="r">Lỗi</th><th class="r">Tool</th><th class="r nw">Gần nhất</th></tr></thead><tbody>' +
+    '<thead><tr><th>Người</th><th class="r">Lượt</th>' +
+    (anyBlocked ? '<th class="r nw">Không dùng được</th>' : '') +
+    '<th class="r">Tool</th><th class="r nw">Gần nhất</th></tr></thead><tbody>' +
     DATA.users.map((u) => `<tr><td>${esc(u.name)}</td>
-      <td class="r num">${nf(u.calls)}</td>
-      <td class="r num${uSev(u) ? '' : ' dim'}"${uSev(u) ? ` style="color: var(--${uSev(u)}); font-weight:640"` : ''}>${nf(u.errors)}</td>
-      <td class="r num">${nf(u.tools)}</td>
+      <td class="r num">${nf(u.calls)}</td>` +
+      (anyBlocked
+        ? (u.blocked
+          ? `<td class="r num" style="color: var(--critical); font-weight:640">${nf(u.blocked)}</td>`
+          : '<td class="r num dim">0</td>')
+        : '') +
+      `<td class="r num">${nf(u.tools)}</td>
       <td class="r num dim nw">${dt(u.last)}</td></tr>`).join('') + '</tbody>';
 
   // ── chỗ cắm ──────────────────────────────────────────────────────────

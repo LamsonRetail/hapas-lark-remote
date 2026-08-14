@@ -34,8 +34,12 @@ export const DIMENSIONS = [
  */
 export const MEASURES = [
   { key: 'calls', label: 'Lượt gọi', fmt: 'int' },
-  { key: 'errors', label: 'Số lỗi', fmt: 'int', zeroable: true },
-  { key: 'errRate', label: 'Tỉ lệ lỗi', fmt: 'pct', zeroable: true },
+  // KHÔNG có phép đo "tổng lỗi". Lỗi thô gồm cả thiếu quyền, sai tham số, quá
+  // hạn mức — Lark đã trả lời và model đi tiếp được, người dùng không thấy gì.
+  // Bày ra thì ai cũng chọn nó vì nó to hơn, rồi đọc ra một hệ thống đang hỏng
+  // trong khi nó chạy mượt. Xem impact.mjs.
+  { key: 'blocked', label: 'Không dùng được', fmt: 'int', zeroable: true },
+  { key: 'blockRate', label: 'Tỉ lệ không dùng được', fmt: 'pct', zeroable: true },
   { key: 'p50', label: 'Thời gian trung vị', fmt: 'ms' },
   { key: 'p95', label: 'Thời gian p95', fmt: 'ms' },
   { key: 'users', label: 'Số người khác nhau', fmt: 'int' },

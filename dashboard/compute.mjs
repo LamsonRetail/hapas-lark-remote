@@ -1,4 +1,5 @@
 import crypto from 'node:crypto';
+import { impactedSet } from './impact.mjs';
 
 /**
  * Toàn bộ phép tính của dashboard, KHÔNG phụ thuộc gì vào repo.
@@ -20,16 +21,6 @@ const quant = (s, q) => (s.length ? s[Math.min(s.length - 1, Math.floor(s.length
 /** Cùng công thức machine_id mà server dùng để ghi bảng `machines`. */
 const machineIdFor = (openId, clientId) =>
   'url-' + crypto.createHash('sha256').update(`${openId}|${clientId}`).digest('hex').slice(0, 12);
-
-/**
- * Chỉ phân loại thứ đã khẳng định được. Mã lạ để nguyên là "chưa phân loại" —
- * gán nhãn bừa cho một mã lỗi biến bảng này thành nguồn tin sai.
- */
-function classify(code) {
-  if (code === 'non_json') return { label: 'Lark trả HTML — nghi đổi API', sev: 'critical' };
-  if (/^9999166|^9999167/.test(code || '')) return { label: 'Thiếu quyền', sev: 'warning' };
-  return { label: 'Chưa phân loại', sev: 'serious' };
-}
 
 export async function computeDashboard({ sb, toolNames, appId, windowDays = 30 }) {
   const page = async (p) => {
@@ -72,15 +63,24 @@ export async function computeDashboard({ sb, toolNames, appId, windowDays = 30 }
   const calls = raw.filter(
     (r) => !SKIP_CLIENTS.has(r.client_id) && !r.tool_name.startsWith('__auth.') && r.tool_name !== 'canary_heartbeat',
   );
-  const errs = calls.filter((r) => r.ok === false);
+
+  /**
+   * Bảng này đếm lượt CHẶN người dùng, không đếm lỗi thô — xem impact.mjs.
+   * Thiếu quyền, sai tham số, quá hạn mức đều là Lark đã trả lời; model đọc
+   * xong đi đường khác và người dùng không thấy gì. Đếm cả chúng thì bảng lúc
+   * nào cũng đỏ trong khi tool chạy mượt, và một cảnh báo luôn bật là một
+   * cảnh báo không ai đọc.
+   */
+  const blockedRows = impactedSet(calls);
+  const isBlocked = (r) => blockedRows.has(r);
 
   // ── theo ngày ──
   const dayMap = new Map();
   for (const r of calls) {
     const d = r.created_at.slice(0, 10);
-    const e = dayMap.get(d) || { day: d, calls: 0, errors: 0 };
+    const e = dayMap.get(d) || { day: d, calls: 0, blocked: 0 };
     e.calls++;
-    if (r.ok === false) e.errors++;
+    if (isBlocked(r)) e.blocked++;
     dayMap.set(d, e);
   }
   const daily = [...dayMap.values()].sort((a, b) => a.day.localeCompare(b.day));
@@ -88,22 +88,22 @@ export async function computeDashboard({ sb, toolNames, appId, windowDays = 30 }
   // ── theo tool ──
   const toolMap = new Map();
   for (const r of calls) {
-    const e = toolMap.get(r.tool_name) || { name: r.tool_name, calls: 0, errors: 0, ms: [], lastOk: null, lastErr: null };
+    const e = toolMap.get(r.tool_name) || { name: r.tool_name, calls: 0, blocked: 0, ms: [], lastOk: null, lastBlocked: null };
     e.calls++;
-    if (r.ok === false) { e.errors++; e.lastErr = r.created_at; } else { e.lastOk = r.created_at; }
+    if (isBlocked(r)) { e.blocked++; e.lastBlocked = r.created_at; }
+    if (r.ok !== false) e.lastOk = r.created_at;
     if (r.duration_ms != null) e.ms.push(r.duration_ms);
     toolMap.set(r.tool_name, e);
   }
   const tools = [...toolMap.values()]
     .map((t) => ({
-      name: t.name, calls: t.calls, errors: t.errors, errRate: pct(t.errors, t.calls),
+      name: t.name, calls: t.calls, blocked: t.blocked, blockRate: pct(t.blocked, t.calls),
       p95: quant(t.ms.slice().sort((a, b) => a - b), 0.95),
-      lastOk: t.lastOk, lastErr: t.lastErr,
-      // "Đang hỏng" so lượt đỏ gần nhất với lượt xanh gần nhất — đúng luật
-      // canary.js dùng. Tỷ lệ lỗi trên cả cửa sổ vẫn cao sau khi đã vá xong,
+      lastOk: t.lastOk, lastBlocked: t.lastBlocked,
+      // "Đang hỏng" so lượt chặn gần nhất với lượt chạy được gần nhất — đúng
+      // luật canary.js dùng. Tỷ lệ trên cả cửa sổ vẫn cao sau khi đã vá xong,
       // tố theo nó là tố nhầm một tool đã khoẻ.
-      broken: Boolean(t.lastErr) && (!t.lastOk || t.lastErr > t.lastOk),
-      healed: Boolean(t.lastErr) && Boolean(t.lastOk) && t.lastOk > t.lastErr,
+      broken: Boolean(t.lastBlocked) && (!t.lastOk || t.lastBlocked > t.lastOk),
     }))
     .sort((a, b) => b.calls - a.calls);
 
@@ -118,53 +118,16 @@ export async function computeDashboard({ sb, toolNames, appId, windowDays = 30 }
   const userMap = new Map();
   for (const r of calls) {
     const k = r.user_name || '(không rõ)';
-    const e = userMap.get(k) || { name: k, calls: 0, errors: 0, last: '', tools: new Set() };
+    const e = userMap.get(k) || { name: k, calls: 0, blocked: 0, last: '', tools: new Set() };
     e.calls++;
-    if (r.ok === false) e.errors++;
+    if (isBlocked(r)) e.blocked++;
     if (r.created_at > e.last) e.last = r.created_at;
     e.tools.add(r.tool_name);
     userMap.set(k, e);
   }
   const users = [...userMap.values()]
-    .map((u) => ({ name: u.name, calls: u.calls, errors: u.errors, last: u.last, tools: u.tools.size }))
+    .map((u) => ({ name: u.name, calls: u.calls, blocked: u.blocked, last: u.last, tools: u.tools.size }))
     .sort((a, b) => b.calls - a.calls);
-
-  // ── mã lỗi ──
-  const codeMap = new Map();
-  for (const r of errs) {
-    const code = r.lark_code || '(không mã)';
-    const e = codeMap.get(code) || { code, hits: 0, tools: new Set(), sample: r.error_msg || '', ...classify(r.lark_code) };
-    e.hits++;
-    e.tools.add(r.tool_name);
-    codeMap.set(code, e);
-  }
-  const codes = [...codeMap.values()]
-    .map((c) => ({ code: c.code, hits: c.hits, tools: [...c.tools], sample: (c.sample || '').slice(0, 150), label: c.label, sev: c.sev }))
-    .sort((a, b) => b.hits - a.hits);
-
-  /**
-   * "Lark không phản hồi" — lớp lỗi DUY NHẤT coi là ảnh hưởng người dùng.
-   *
-   * Chỉ tính khi Lark KHÔNG trả lời: endpoint trả HTML/404 (lark_code
-   * 'non_json') hoặc mạng timeout/đứt kết nối. Permission, validation, business
-   * là Lark ĐÃ trả lời — chỉ là trả "không" — nên KHÔNG tính: hệ thống vẫn chạy,
-   * người dùng chỉ thiếu quyền hoặc nhập sai.
-   *
-   * Vẫn lọc "không được cứu": nếu cùng người có lượt THÀNH CÔNG trong 5 phút kế
-   * (Claude thử lại hoặc đi đường khác), coi như không tới tay người dùng.
-   */
-  const isNoResponse = (r) =>
-    r.lark_code === 'non_json' ||
-    (!r.lark_code && /timeout|abort|fetch failed|network|econn|etimedout|socket|getaddrinfo/i.test(r.error_msg || ''));
-
-  const okTimes = calls.filter((r) => r.ok === true).map((r) => ({ t: new Date(r.created_at).getTime(), u: r.user_name }));
-  const noResponse = [];
-  for (const e of errs) {
-    if (!isNoResponse(e)) continue;
-    const t = new Date(e.created_at).getTime();
-    if (okTimes.some((o) => o.u === e.user_name && o.t > t && o.t - t <= 300000)) continue;
-    noResponse.push({ at: e.created_at, tool: e.tool_name, code: e.lark_code, msg: (e.error_msg || '').slice(0, 120), user: e.user_name });
-  }
 
   /**
    * Chỗ cắm — HỢP của hai nguồn, khoá chung là `machine_id`:
@@ -258,10 +221,11 @@ export async function computeDashboard({ sb, toolNames, appId, windowDays = 30 }
     to: calls.length ? calls[calls.length - 1].created_at : null,
     kpi: {
       calls: calls.length,
-      errors: errs.length,
-      errRate: pct(errs.length, calls.length),
-      noResp: noResponse.length,
-      noRespRate: pct(noResponse.length, calls.length),
+      // MỘT con số về hỏng hóc, không phải hai. Trước đây có cả `errors` thô
+      // lẫn `noResp`, và cái thô nhảy lên KPI vì nó to hơn — bảng báo 11% lỗi
+      // trong khi thực tế chỉ 3% chạm tới người dùng.
+      blocked: blockedRows.size,
+      blockRate: pct(blockedRows.size, calls.length),
       p50: quant(durs, 0.5),
       p95: quant(durs, 0.95),
       users: users.length,
@@ -281,11 +245,16 @@ export async function computeDashboard({ sb, toolNames, appId, windowDays = 30 }
     },
     daily,
     tools,
-    risky: tools.filter((t) => t.broken && t.errors >= 2).sort((a, b) => b.errors - a.errors),
-    healed: tools.filter((t) => t.healed && t.errors >= 2),
+    // CỐ Ý không có danh sách "tool đang hỏng" ở đây. Đã thử: nó gọi tên
+    // `lark_api_call` — tool gọi endpoint tuỳ ý, người dùng đưa sai đường dẫn
+    // là ra 404, không phải tool hỏng. Một danh sách mà mục đầu tiên đã là báo
+    // động giả thì không ai đọc tới mục thứ hai. Việc canh tool hỏng thuộc về
+    // canary.js, nơi có probe cố định nên 404 nghĩa là Lark đổi API thật.
+    //
+    // `risky`/`healed`/`codes`/`noResponse` cũ cũng đã bỏ: liệt kê lỗi thô,
+    // không trang nào dùng, mà vẫn đẩy error_msg kèm id tài liệu xuống trình duyệt.
     unused,
     users,
-    noResponse,
     connectors,
     hidden,
     auth: [...authCounts.entries()].map(([event, n]) => ({ event, n })).sort((a, b) => b.n - a.n),

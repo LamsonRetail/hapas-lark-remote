@@ -324,7 +324,7 @@
 
   // Danh mục cột/phép đo do build.mjs nướng vào từ explore-schema.mjs — trang
   // KHÔNG tự khai lại, nếu không nó sẽ chào một lựa chọn mà máy chủ từ chối.
-  const SCHEMA = {"DIMENSIONS":[{"key":"day","label":"Ngày","col":null,"time":true},{"key":"hour","label":"Giờ trong ngày","col":null,"time":true},{"key":"user_name","label":"Người gọi","col":"user_name"},{"key":"tool_name","label":"Tool","col":"tool_name","mono":true},{"key":"client_id","label":"Chỗ cắm","col":"client_id","mono":true},{"key":"lark_code","label":"Mã lỗi Lark","col":"lark_code","mono":true},{"key":"ok","label":"Kết quả","col":"ok"},{"key":"source","label":"Nguồn (url / zip)","col":"source"}],"MEASURES":[{"key":"calls","label":"Lượt gọi","fmt":"int"},{"key":"errors","label":"Số lỗi","fmt":"int","zeroable":true},{"key":"errRate","label":"Tỉ lệ lỗi","fmt":"pct","zeroable":true},{"key":"p50","label":"Thời gian trung vị","fmt":"ms"},{"key":"p95","label":"Thời gian p95","fmt":"ms"},{"key":"users","label":"Số người khác nhau","fmt":"int"},{"key":"tools","label":"Số tool khác nhau","fmt":"int"}],"WINDOWS":[7,30,90]};
+  const SCHEMA = {"DIMENSIONS":[{"key":"day","label":"Ngày","col":null,"time":true},{"key":"hour","label":"Giờ trong ngày","col":null,"time":true},{"key":"user_name","label":"Người gọi","col":"user_name"},{"key":"tool_name","label":"Tool","col":"tool_name","mono":true},{"key":"client_id","label":"Chỗ cắm","col":"client_id","mono":true},{"key":"lark_code","label":"Mã lỗi Lark","col":"lark_code","mono":true},{"key":"ok","label":"Kết quả","col":"ok"},{"key":"source","label":"Nguồn (url / zip)","col":"source"}],"MEASURES":[{"key":"calls","label":"Lượt gọi","fmt":"int"},{"key":"blocked","label":"Không dùng được","fmt":"int","zeroable":true},{"key":"blockRate","label":"Tỉ lệ không dùng được","fmt":"pct","zeroable":true},{"key":"p50","label":"Thời gian trung vị","fmt":"ms"},{"key":"p95","label":"Thời gian p95","fmt":"ms"},{"key":"users","label":"Số người khác nhau","fmt":"int"},{"key":"tools","label":"Số tool khác nhau","fmt":"int"}],"WINDOWS":[7,30,90]};
   // Có số nướng sẵn = bản xem trước tĩnh (không backend) → vẽ một lần, khoá ô chọn.
   const BAKED = /*__DATA__*/null;
 
@@ -362,22 +362,26 @@
   };
 
   /**
-   * Màu của một cột = sức khoẻ của CHÍNH nhóm đó, không phải màu trang trí.
+   * Màu của một cột = nhóm đó có CHẶN người dùng không, không phải màu trang trí.
    *
    * Trước đây mọi cột cùng một sắc chàm, nên biểu đồ "lượt gọi theo tool" chỉ
    * trả lời được "cái nào nhiều" — muốn biết cái nào đang hỏng phải dò xuống
-   * bảng bên dưới. Tô theo tỉ lệ lỗi thì hai câu hỏi đó được trả lời trong
-   * cùng một cái liếc mắt.
+   * bảng bên dưới.
    *
-   * Ba mức chứ không phải hai: 1 lỗi trên 200 lượt mà tô đỏ chót thì lần sau
-   * không ai tin màu đỏ nữa.
+   * Tô theo lượt KHÔNG DÙNG ĐƯỢC, không theo lỗi thô: thiếu quyền và sai tham
+   * số là Lark đã trả lời, model đi tiếp được và người dùng không thấy gì. Tô
+   * đỏ cả chúng thì gần như cột nào cũng đỏ, và một màu đỏ luôn bật là màu đỏ
+   * không ai còn nhìn.
+   *
+   * Ba mức chứ không hai: 1 lượt hỏng trên 200 mà đỏ chót thì lần sau không ai
+   * tin màu đỏ nữa.
    */
   const HEALTH = [
-    { sev: 'good', label: 'Không lỗi' },
-    { sev: 'warning', label: 'Dưới 20% lỗi' },
-    { sev: 'critical', label: 'Từ 20% lỗi' },
+    { sev: 'good', label: 'Dùng được hết' },
+    { sev: 'warning', label: 'Dưới 20% không dùng được' },
+    { sev: 'critical', label: 'Từ 20% không dùng được' },
   ];
-  const health = (r) => (!r.errors ? 'good' : r.errRate >= 20 ? 'critical' : 'warning');
+  const health = (r) => (!r.blocked ? 'good' : r.blockRate >= 20 ? 'critical' : 'warning');
   const fill = (r) => `var(--${health(r)})`;
 
   /** Trục tròn số: 2–5 vạch, không ra mấy con lẻ như 1.372,4. */
@@ -516,7 +520,8 @@
     $('chart').querySelectorAll('[data-i]').forEach((el) => {
       const r = shown[+el.dataset.i];
       bindTip(el, `<b>${esc(cut(r.key, 40))}</b><br>${esc(me.label)}: ${esc(fmt(r[me.key], me.fmt))}<br>
-        ${nf(r.calls)} lượt · ${nf(r.errors)} lỗi (${String(r.errRate).replace('.', ',')}%)<br>p95 ${ms(r.p95)}`);
+        ${nf(r.calls)} lượt · p95 ${ms(r.p95)}` +
+        (r.blocked ? `<br>${nf(r.blocked)} không dùng được (${String(r.blockRate).replace('.', ',')}%)` : ''));
     });
 
     drawTable(rows, me, dim);

@@ -7,9 +7,29 @@ Hai trang, cùng đọc `audit_logs` + `machines` trên Supabase:
   một người gọi. Nhóm theo tool + lọc một người = "người này đã gọi tool nào".
   Trạng thái nằm trên URL nên gửi được cho người khác bằng cách dán link.
 
-Cột và thanh tô theo tỉ lệ lỗi của chính nhóm đó — xanh lá không lỗi, hổ phách
-dưới 20%, đỏ từ 20% trở lên. Không phải màu trang trí: nó để "cái nào nhiều" và
-"cái nào đang hỏng" trả lời được trong cùng một cái liếc mắt.
+## Bảng này KHÔNG đếm lỗi thô
+
+Đây là quy tắc quan trọng nhất của cả hai trang, viết ở `impact.mjs`.
+
+Phần lớn dòng `ok = false` trong `audit_logs` là Lark **đã trả lời đàng hoàng**,
+chỉ là trả "không": thiếu quyền, sai tham số, quá hạn mức. Model đọc câu trả lời
+đó rồi gọi lại cho đúng hoặc đi đường khác, và người dùng không thấy gì cả.
+
+Chỉ đếm lượt **chặn người dùng** — lúc Lark không trả lời được (endpoint ra
+HTML/404, mạng đứt) và model buộc phải nói "không dùng được tool này". Vẫn trừ
+tiếp những lượt "được cứu": cùng người có lượt thành công trong 5 phút kế tiếp.
+
+Chênh lệch không nhỏ: 30 ngày gần nhất có **51 lỗi thô nhưng chỉ 15 lượt thật sự
+chặn người dùng** — 11,1% so với 2,9%. Đếm kiểu thô thì bảng lúc nào cũng đỏ
+trong khi tool chạy mượt, mà một cảnh báo luôn bật là một cảnh báo không ai đọc.
+
+Vì thế trang **không** có phép đo "tổng lỗi", **không** có bảng mã lỗi, và
+**không** có danh sách "tool đang hỏng" (đã thử: mục đầu tiên là `lark_api_call`
+— tool gọi endpoint tuỳ ý, người dùng đưa sai đường dẫn là ra 404). Việc canh
+tool hỏng thuộc về `src/canary.js`, nơi probe cố định nên 404 là tín hiệu thật.
+
+Màu theo đúng luật đó: xanh lá dùng được hết, hổ phách dưới 20% không dùng được,
+đỏ từ 20%. Chú giải chỉ hiện khi biểu đồ thật sự có phần đỏ.
 
 Gần như chỉ ĐỌC. Thao tác ghi duy nhất là ẩn một dòng khỏi mục "chỗ cắm"
 (xem bên dưới). Thu hồi truy cập vẫn dùng `npm run revoke` chạy tại chỗ.
