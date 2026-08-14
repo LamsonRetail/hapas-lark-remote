@@ -244,3 +244,14 @@
 /* Danh sách ứng dụng trong MỘT ô: xuống dòng thay vì kéo dài cột. Cao quá thì
    tự cuộn — một người cắm nhiều chỗ không được phép làm cả hàng cao gấp ba. */
 .chips { display: flex; flex-wrap: wrap; gap: 5px; max-height: 52px; overflow-y: auto; }
+
+/* Ô Canary trong dải canh gác bấm được để mở bảng probe ngay dưới. */
+.statusbar .item[role="button"] { cursor: pointer; }
+.statusbar .item[role="button"]:hover { background: color-mix(in srgb, var(--sev) 9%, var(--card)); }
+.statusbar .item[role="button"]:focus-visible { outline: 2px solid var(--series-1); outline-offset: -2px; }
+.statusbar .k .more { margin-left: 8px; font-size: 10.5px; font-weight: 700; letter-spacing: .04em;
+  color: color-mix(in srgb, var(--series-1) 75%, var(--ink-3)); }
+
+/* Số trang: to và rõ, vì đó là thứ mắt tìm khi bấm qua lại. */
+.pnum { font-size: 15px; color: var(--ink-2); font-variant-numeric: tabular-nums; }
+.pnum b { font-size: 19px; font-weight: 700; color: var(--ink); }

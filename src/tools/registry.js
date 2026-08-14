@@ -115,6 +115,9 @@ export function registerAll(server, specs, getToken, actor = {}) {
           openId: actor.openId,
           userName: actor.name,
           clientId: actor.clientId,
+          // Tên ứng dụng đi kèm mọi dòng audit: client_id là chuỗi băm đổi
+          // mỗi lần cắm lại, không nhóm được và người đọc không hiểu.
+          clientApp: actor.clientApp,
           toolName: t.name,
           args,
           ok,

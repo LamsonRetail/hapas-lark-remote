@@ -5,7 +5,7 @@ import { EXPLORE_COLS, aggregate } from '../explore-compute.mjs';
 /**
  * Gộp số audit_logs theo MỘT cột do người xem chọn.
  *
- *   GET /api/explore?dim=tool_name&days=30&source=url&include=tools
+ *   GET /api/explore?dim=tool_name&days=30&user=…
  *
  * Trả về MỌI phép đo cho từng nhóm trong một lần gọi, không chỉ phép đo đang
  * hiện. Đổi từ "lượt gọi" sang "tỉ lệ lỗi" là đổi cách nhìn cùng một tập số —
@@ -22,30 +22,51 @@ export default async function handler(req, res) {
   if (!dim) return res.status(400).json({ error: 'Cột không hợp lệ.' });
 
   const days = WINDOWS.includes(+req.query?.days) ? +req.query.days : 30;
-  const source = ['url', 'zip', 'all'].includes(req.query?.source) ? req.query.source : 'url';
-  const include = req.query?.include === 'all' ? 'all' : 'tools';
+  // Luôn bỏ __auth.* và canary: chúng là nhịp tim của hệ thống, không phải
+  // người dùng gọi tool. Trước đây có ô tick để bật — nhưng bật lên thì mọi
+  // biểu đồ theo ngày có một sàn phẳng do canary tạo, che mất hình dạng thật.
+  const include = 'tools';
   // Lọc theo người khớp CHÍNH XÁC chuỗi ở phía máy chủ sau khi đã đọc về, không
   // ghép vào truy vấn PostgREST — tên có dấu phẩy và ngoặc, mà cú pháp lọc của
   // PostgREST lại dùng đúng hai ký tự đó làm dấu phân cách.
   const user = String(req.query?.user || '').slice(0, 200);
 
   const since = new Date(Date.now() - days * 86400000).toISOString();
-  const filter = source === 'all' ? '' : `&source=eq.${source}`;
+  // Chốt cứng source='url': chỉ theo dõi MCP remote. Bản zip ghi chung bảng
+  // nhưng để lẫn vào thì mọi con số phải kèm câu hỏi 'của bản nào?'.
+  const filter = '&source=eq.url';
+
+  /**
+   * `client_app` chỉ có sau supabase/audit-client-app.sql. PostgREST KHÔNG bỏ
+   * qua cột lạ trong `select` — nó trả 400 và cả endpoint chết theo 502. Nên
+   * đọc kèm cột đó trước, hụt thì đọc lại không kèm: mất một cột còn hơn mất
+   * cả khu "Đào sâu". Cùng nguyên tắc với readMachines ở compute.mjs.
+   */
+  const page = async (cols, off) => sb(
+    `audit_logs?created_at=gte.${since}${filter}&select=${cols.join(',')}&order=created_at.asc&limit=1000&offset=${off}`,
+  );
+  const WITHOUT = EXPLORE_COLS.filter((c) => c !== 'client_app');
 
   try {
+    let cols = EXPLORE_COLS;
     const rows = [];
     // PostgREST trả tối đa 1000 dòng một lần. Trần 200k là chốt chặn cho vòng
     // lặp, không phải giới hạn thiết kế — 90 ngày hiện ở mức vài nghìn dòng.
     for (let off = 0; off < 200000; off += 1000) {
-      const chunk = await sb(
-        `audit_logs?created_at=gte.${since}${filter}&select=${EXPLORE_COLS.join(',')}&order=created_at.asc&limit=1000&offset=${off}`,
-      );
+      let chunk;
+      try {
+        chunk = await page(cols, off);
+      } catch (e) {
+        if (cols === WITHOUT) throw e;
+        cols = WITHOUT;
+        chunk = await page(cols, off);
+      }
       rows.push(...chunk);
       if (chunk.length < 1000) break;
     }
 
     res.setHeader('Cache-Control', 'no-store');
-    res.json({ generatedAt: new Date().toISOString(), days, source, ...aggregate({ rows, dim: dim.key, include, user }) });
+    res.json({ generatedAt: new Date().toISOString(), days, ...aggregate({ rows, dim: dim.key, include, user }) });
   } catch (e) {
     res.status(502).json({ error: e.message });
   }

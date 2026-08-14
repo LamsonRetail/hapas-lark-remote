@@ -86,7 +86,7 @@ function schedule() {
   timer.unref?.(); // đừng giữ process sống chỉ vì hàng đợi audit
 }
 
-export function auditToolCall({ openId, userName, clientId, toolName, args, ok, errorMsg, larkCode, durationMs }) {
+export function auditToolCall({ openId, userName, clientId, clientApp, toolName, args, ok, errorMsg, larkCode, durationMs }) {
   if (!auditEnabled) return;
 
   if (queue.length >= QUEUE_MAX) {
@@ -109,6 +109,17 @@ export function auditToolCall({ openId, userName, clientId, toolName, args, ok, 
     open_id: openId || null,
     user_name: userName || null,
     client_id: clientId || null,
+    /**
+     * Tên ứng dụng người dùng cắm bằng (Claude / Codex / static:…).
+     *
+     * `client_id` KHÔNG thay được nó: nó là chuỗi băm DCR và Claude đăng ký mới
+     * mỗi lần cắm lại connector, nên vừa vô nghĩa với người đọc vừa không gom
+     * nhóm được. Dashboard cần tên để nhóm "ai dùng cái gì".
+     *
+     * Cột mới — chưa chạy migration thì `flush()` tự bỏ nó ra rồi gửi lại
+     * (xem missingCols), mất một trường chứ không mất cả lô log.
+     */
+    client_app: clientApp || null,
     tool_name: toolName,
     args: argsStr,
     ok: Boolean(ok),

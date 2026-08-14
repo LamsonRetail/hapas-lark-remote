@@ -16,15 +16,24 @@
  * `time`   trục thời gian → vẽ biểu đồ đường, và không sắp lại theo độ lớn
  * `mono`   giá trị là mã/định danh → hiện bằng font đơn cách
  */
+/**
+ * ĐÃ BỎ ba cột, mỗi cột một lý do:
+ *
+ *   lark_code  — mã lỗi thô. Bảng này chỉ đếm lỗi CHẶN người dùng (impact.mjs);
+ *                nhóm theo mã lỗi là mời người đọc quay lại đếm lỗi thô, đúng
+ *                thứ đã cố tình bỏ.
+ *   source     — chỉ theo dõi MCP remote, mọi truy vấn đã chốt source='url'.
+ *                Một cột chỉ có đúng một giá trị không nhóm được gì.
+ *   client_id  — chuỗi băm DCR, đổi mỗi lần cắm lại, người đọc không hiểu gì.
+ *                Thay bằng `client_app` (Claude / Codex) — xem ghi chú ở đó.
+ */
 export const DIMENSIONS = [
   { key: 'day', label: 'Ngày', col: null, time: true },
   { key: 'hour', label: 'Giờ trong ngày', col: null, time: true },
   { key: 'user_name', label: 'Người gọi', col: 'user_name' },
   { key: 'tool_name', label: 'Tool', col: 'tool_name', mono: true },
-  { key: 'client_id', label: 'Chỗ cắm', col: 'client_id', mono: true },
-  { key: 'lark_code', label: 'Mã lỗi Lark', col: 'lark_code', mono: true },
+  { key: 'client_app', label: 'Ứng dụng', col: null },
   { key: 'ok', label: 'Kết quả', col: 'ok' },
-  { key: 'source', label: 'Nguồn (url / zip)', col: 'source' },
 ];
 
 /**

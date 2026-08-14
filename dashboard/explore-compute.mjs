@@ -21,7 +21,7 @@ export const SKIP_CLIENTS = new Set(['local-admin', 'canary', 'revoke-test-a']);
  * `args` chỉ phục vụ impact.mjs (nhận ra tham số trỏ ra ngoài Lark) — không
  * cột nào trong đó đi xuống trình duyệt, endpoint chỉ trả số đã gộp.
  */
-export const EXPLORE_COLS = ['created_at', 'tool_name', 'user_name', 'client_id', 'ok', 'duration_ms', 'lark_code', 'source', 'args'];
+export const EXPLORE_COLS = ['created_at', 'tool_name', 'user_name', 'client_id', 'ok', 'duration_ms', 'lark_code', 'source', 'args', 'client_app'];
 
 export function aggregate({ rows, dim: dimKey, include = 'tools', user = '' }) {
   const dim = DIM_BY_KEY.get(dimKey);
@@ -58,6 +58,9 @@ export function aggregate({ rows, dim: dimKey, include = 'tools', user = '' }) {
     if (dim.key === 'day') return r.created_at.slice(0, 10);
     if (dim.key === 'hour') return r.created_at.slice(11, 13) + ':00';
     if (dim.key === 'ok') return r.ok === false ? 'Lỗi' : 'Thành công';
+    // Cột client_app mới có từ 14/08; dòng cũ hơn không có gì để nhóm, nói
+    // thẳng ra thay vì gộp chung vào '(trống)' rồi bị đọc thành 'không rõ app'.
+    if (dim.key === 'client_app') return r.client_app || '(trước 14/08)';
     return r[dim.col] || '(trống)';
   };
 
