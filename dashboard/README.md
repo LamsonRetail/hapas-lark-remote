@@ -32,6 +32,39 @@ api/explore.js        gộp số theo cột được chọn
 là các chỗ cắm mà `build.mjs` thay vào. Bản tĩnh và bản Vercel gọi CHUNG
 `computeDashboard` / `aggregate` nên không bao giờ lệch số.
 
+## Rê chuột KHÔNG được dựng lại DOM
+
+Luật quan trọng nhất khi sửa `template.html`, và là gốc của một lỗi đã lọt lên
+production: lịch chọn ngày **bấm không ăn**.
+
+Bản đầu gắn `mouseenter` lên từng ô ngày, trong đó gọi hàm vẽ lại cả cái lịch
+bằng `innerHTML`. Người dùng bấm ngày đầu, đưa tay tới ngày thứ hai, mỗi ô lướt
+qua bắn `mouseenter` → DOM dựng lại → `mousedown` rơi trên nút A còn `mouseup`
+rơi trên nút B. Trình duyệt **chỉ phát `click` khi hai nửa rơi trên cùng một
+phần tử**, nên cú bấm biến mất. Không lỗi, không log, không dấu vết.
+
+Mọi phép thử tự động đều PASS vì `el.click()` chạy mà không có con trỏ nào rê
+qua. Bug chỉ tồn tại khi có bàn tay thật. Thử lại thì phải bắn đủ chuỗi
+`mouseover → mousedown → mouseup → click` và khẳng định phần tử vẫn còn trong
+DOM giữa các bước.
+
+Ba nguyên tắc rút ra, đã áp cho cả trang:
+
+| | |
+|---|---|
+| Tách vẽ khung khỏi tô trạng thái | `calRender()` đụng `innerHTML`, chỉ chạy khi mở lịch hoặc đổi tháng. `calPaint()` chỉ đổi class trên ô sẵn có — đây là hàm duy nhất được chạy khi con trỏ đang ở trên lịch |
+| Uỷ nhiệm sự kiện | Gắn một lần lên `#cal`, không gắn lại từng ô sau mỗi lần vẽ |
+| `setHtml()` thay cho `innerHTML =` | Chỉ ghi khi chuỗi THẬT SỰ đổi. Vòng poll 30s trước đây ghi đè dải canh gác, KPI, hai bảng và hai ô chọn kể cả khi không có gì đổi — mở danh sách "Người" đúng lúc poll là nó sập xuống; bấm nút chuyển trang đúng lúc poll là mất cú bấm |
+
+Chỗ nào dựng lại DOM rồi gắn listener thì **phải** chốt theo giá trị trả về của
+`setHtml`, không thì mỗi vòng poll chồng thêm một listener: bấm một cái nhảy hai
+trang, rồi ba, rồi bốn.
+
+Vị trí popover lịch do `calPlace()` đo và kẹp, không neo bằng CSS: chỗ đứng của
+nút lịch trôi theo bề rộng màn. Kẹp theo `documentElement.clientWidth`, **không**
+theo `innerWidth` — innerWidth tính cả thanh cuộn dọc nên lịch vẫn lố ra vài
+pixel và trang rung ngang khi mở.
+
 ## Bộ lọc là TOÀN CỤC
 
 Khoảng ngày, người, ứng dụng đi vào **cả hai** endpoint, nên mọi con số trên

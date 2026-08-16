@@ -411,11 +411,12 @@ h2 .seg-sm { align-self: center; }
   background: var(--wash); color: color-mix(in srgb, var(--series-1) 70%, var(--ink)); }
 .cal-btn.on .cal-ic { color: inherit; }
 
+/* Vị trí ngang do calPlace() trong template đo và kẹp — CSS không đoán nổi nút
+   lịch nằm ở đâu, vì chỗ đó trôi theo bề rộng màn. `min-width` co lại trên màn
+   siêu hẹp để popover không rộng hơn chính khung nhìn. */
 .cal { position: absolute; z-index: 40; top: calc(100% + 8px); left: 0;
   background: var(--card); border: 1px solid var(--rule); border-radius: 14px;
-  box-shadow: var(--elev-hi); padding: 12px; min-width: 300px; }
-/* Gần mép phải màn thì thả về bên phải, không thì lịch tràn ra ngoài khung. */
-@media (max-width: 700px) { .cal { left: auto; right: 0; } }
+  box-shadow: var(--elev-hi); padding: 12px; min-width: min(300px, calc(100vw - 40px)); }
 .cal-nav { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 8px; }
 .cal-nav .btn { padding: 4px 10px; }
 .cal-hint { font-size: var(--fs-2); font-weight: 640; color: var(--ink-2); }
@@ -671,6 +672,32 @@ h2 .seg-sm { align-self: center; }
     return { from: addDays(to, -(p.days - 1)), to };
   };
 
+  /**
+   * Ghi innerHTML CHỈ KHI nội dung thật sự đổi. Trả về true nếu đã dựng lại.
+   *
+   * Trang tự nạp lại mỗi 30 giây, và bản đầu cứ thế ghi đè innerHTML của dải
+   * canh gác, KPI, hai cái bảng và hai ô chọn — kể cả khi không có gì đổi. Ghi
+   * đè là huỷ phần tử cũ và tạo phần tử mới, mà điều đó xảy ra giữa lúc có
+   * người đang thao tác thì:
+   *
+   *   - đang mở danh sách ô chọn "Người" → danh sách sập xuống, mất chỗ đang dò
+   *   - đang bấm nút chuyển trang → `mousedown` một nút, `mouseup` nút khác,
+   *     trình duyệt không phát `click`, cú bấm bốc hơi không dấu vết
+   *
+   * Đúng cái bẫy đã làm hỏng lịch chọn ngày, chỉ khác là ở đây nó cần trúng
+   * đúng 30 giây một lần nên hiếm hơn và khó tin hơn khi có người báo lỗi.
+   *
+   * So chuỗi trên một thuộc tính JS chứ không đọc `el.innerHTML`: trình duyệt
+   * chuẩn hoá lại markup khi đọc ra (thứ tự thuộc tính, dấu nháy), nên so với
+   * chuỗi mình vừa ghi vào là gần như luôn lệch — và tối ưu này thành vô dụng.
+   */
+  function setHtml(el, html) {
+    if (!el || el.__html === html) return false;
+    el.__html = html;
+    el.innerHTML = html;
+    return true;
+  }
+
   const tip = $('tip');
   function bindTip(el, html) {
     el.setAttribute('tabindex', '0');
@@ -754,17 +781,26 @@ h2 .seg-sm { align-self: center; }
     const { page, max } = pageOf(key, total);
     const el = $(elId);
     if (!el) return;
-    if (max < 2) { el.innerHTML = ''; return; }
+    if (max < 2) { setHtml(el, ''); return; }
     // Chỉ "3 / 5". Tổng số dòng đã nằm ngay tiêu đề bảng phía trên, nhắc lại ở
     // đây là bắt mắt đọc hai lần cùng một con số.
-    el.innerHTML = `<div class="pager">
+    const html = `<div class="pager">
         <button class="btn" data-d="-1"${page === 1 ? ' disabled' : ''}>← Trước</button>
         <span class="pnum"><b>${page}</b> / ${max}</span>
         <button class="btn" data-d="1"${page === max ? ' disabled' : ''}>Sau →</button>
       </div>`;
+    // Hàm vẽ lại giữ TRÊN phần tử, không trong bao đóng của listener: khi HTML
+    // không đổi ta không gắn lại listener, mà `redraw` của khu Đào sâu là một
+    // bao đóng MỚI ôm tập dòng mới mỗi lần vẽ. Nhốt nó trong listener cũ là bấm
+    // chuyển trang xong nhận lại đúng tập dòng của lần nạp trước.
+    el.__redraw = redraw;
+    // Gắn trình xử lý CHỈ khi vừa dựng lại. Không có cái chốt này thì mỗi lần
+    // poll lại chồng thêm một listener lên đúng hai cái nút — bấm một cái nhảy
+    // hai trang, rồi ba, rồi bốn, và càng để trang mở lâu càng loạn.
+    if (!setHtml(el, html)) return;
     el.querySelectorAll('button').forEach((b) => b.addEventListener('click', () => {
       pageAt[key] = Math.min(max, Math.max(1, page + Number(b.dataset.d)));
-      redraw();
+      el.__redraw();
     }));
   }
 
@@ -826,6 +862,17 @@ h2 .seg-sm { align-self: center; }
     $('f-reset').addEventListener('click', () => { Object.assign(FILTER, DEF_FILTER); applyFilter(); });
     $('f-cal').addEventListener('click', () => (calOpen ? closeCal() : openCal()));
 
+    // Uỷ nhiệm lên `#cal` — phần tử này KHÔNG bao giờ bị thay, chỉ ruột nó bị
+    // dựng lại. Gắn một lần ở đây thì không có lần dựng nào làm mất trình xử lý,
+    // và không có lần dựng nào bị kích hoạt bởi chính việc rê chuột.
+    $('cal').addEventListener('click', onCalClick);
+    $('cal').addEventListener('mouseover', onCalHover);
+    $('cal').addEventListener('mouseleave', () => {
+      // Rời khỏi lịch thì bỏ vệt tô thử, không thì nó đứng lại ở ô cuối cùng
+      // con trỏ đi qua và trông như đã chọn tới đó rồi.
+      if (calHover) { calHover = ''; calPaint(); }
+    });
+
     // Bấm ra ngoài / bấm Esc là đóng lịch. Thiếu hai cái này thì một popover
     // mở ra là nó nằm lì trên màn cho tới khi bấm trúng đúng cái nút đã mở nó.
     document.addEventListener('click', (e) => {
@@ -859,6 +906,10 @@ h2 .seg-sm { align-self: center; }
     addEventListener('scroll', onScroll, { passive: true });
     addEventListener('resize', onScroll, { passive: true });
     onScroll();
+
+    // Đổi bề rộng cửa sổ là nút lịch đổi chỗ — popover phải bám theo, không thì
+    // nó đứng lại ở toạ độ cũ và thò ra ngoài màn.
+    addEventListener('resize', () => { if (calOpen) calPlace(); }, { passive: true });
 
     if (STATIC) lockGlobalFilters();
   }
@@ -898,8 +949,10 @@ h2 .seg-sm { align-self: center; }
     // không hoạt động biến mất) thì vẫn phải nằm trong ô — không thì ô hiện
     // "Tất cả" trong khi số liệu vẫn đang lọc theo người đó.
     const withCur = (list, cur) => (cur && !list.includes(cur) ? [cur, ...list] : list);
-    $('f-user').innerHTML = opts(withCur(f.users, FILTER.user), FILTER.user, 'Tất cả mọi người');
-    $('f-app').innerHTML = opts(withCur(f.apps, FILTER.app), FILTER.app, 'Tất cả ứng dụng');
+    // Hai ô này là chỗ setHtml quan trọng nhất: người dùng mở danh sách ra dò
+    // tên, vòng poll 30s ập tới ghi đè <option>, danh sách sập ngay dưới tay.
+    setHtml($('f-user'), opts(withCur(f.users, FILTER.user), FILTER.user, 'Tất cả mọi người'));
+    setHtml($('f-app'), opts(withCur(f.apps, FILTER.app), FILTER.app, 'Tất cả ứng dụng'));
 
     const dirty = FILTER.user || FILTER.app || FILTER.preset !== DEF_FILTER.preset;
     $('f-reset').hidden = !dirty || STATIC;
@@ -914,17 +967,17 @@ h2 .seg-sm { align-self: center; }
     if (FILTER.app && f.noApp) {
       notes.push(`${nf(f.noApp)} lượt gọi ghi trước khi hệ thống bắt đầu lưu tên ứng dụng — không nằm trong bộ lọc này.`);
     }
-    $('fb-note').innerHTML = notes.map((n) => `<span>⚠ ${esc(n)}</span>`).join('');
+    setHtml($('fb-note'), notes.map((n) => `<span>⚠ ${esc(n)}</span>`).join(''));
     $('fb-note').hidden = !notes.length;
 
     // Dòng phạm vi dưới tiêu đề trang.
     const d = r && r.from ? spanDays(r.from, r.to) : 0;
-    $('scope').innerHTML = [
+    setHtml($('scope'), [
       `<b>${esc(rangeText(r))}</b>`,
       d ? `${nf(d)} ngày` : '',
       FILTER.user ? `chỉ <b>${esc(cut(FILTER.user, 28))}</b>` : 'tất cả mọi người',
       FILTER.app ? `qua <b>${esc(FILTER.app)}</b>` : '',
-    ].filter(Boolean).join(' · ');
+    ].filter(Boolean).join(' · '));
   }
 
   // ── Lịch chọn khoảng ────────────────────────────────────────────────────
@@ -936,6 +989,30 @@ h2 .seg-sm { align-self: center; }
    * qua lịch là mở, định vị tháng, bấm hai đầu — bốn thao tác cho đúng thứ mà
    * hầu hết lượt mở trang cần. Bỏ mốc sẵn là bắt cả tổ trả giá cho một nhu cầu
    * thỉnh thoảng.
+   */
+  /**
+   * ⚠ LUẬT SỐNG CÒN CỦA FILE NÀY: rê chuột KHÔNG được dựng lại DOM.
+   *
+   * Bản đầu gắn `mouseenter` lên từng ô ngày, và trong đó gọi `drawCal()` —
+   * hàm ghi đè `innerHTML` của cả cái lịch. Hậu quả không hiện ra ở bất kỳ phép
+   * thử tự động nào, vì `el.click()` chạy mà không có con trỏ nào rê qua:
+   *
+   *   người dùng bấm ngày đầu  → ok
+   *   đưa tay tới ngày thứ hai → mỗi ô lướt qua bắn `mouseenter` → dựng lại DOM
+   *   bấm ngày thứ hai         → `mousedown` rơi trên nút A, DOM bị thay,
+   *                              `mouseup` rơi trên nút B
+   *   → trình duyệt KHÔNG phát `click` (nó đòi hai nửa rơi cùng một phần tử)
+   *   → cú bấm biến mất, không lỗi, không log. Lịch "bấm không ăn".
+   *
+   * Nên tách làm hai việc, và chỉ việc thứ nhất được đụng tới `innerHTML`:
+   *
+   *   calRender()  dựng khung — CHỈ khi mở lịch hoặc đổi tháng, đều là thao tác
+   *                rời rạc, không có cú bấm nào đang dở dang
+   *   calPaint()   đổi class trên các ô SẴN CÓ + chữ gợi ý. Không tạo, không
+   *                xoá phần tử nào, nên không cú bấm nào bị cắt ngang
+   *
+   * Và mọi sự kiện uỷ nhiệm lên `#cal` — gắn MỘT lần, sống qua mọi lần dựng
+   * lại khung. Gắn lại từng ô sau mỗi lần vẽ chính là thứ đẻ ra lỗi trên.
    */
   let calOpen = false, calCursor = '', calPick = null, calHover = '';
   const DOW = ['T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'CN'];
@@ -958,22 +1035,58 @@ h2 .seg-sm { align-self: center; }
     calOpen = true;
     $('cal').hidden = false;
     $('f-cal').setAttribute('aria-expanded', 'true');
-    drawCal();
+    calRender();
+    calPlace();
+  }
+
+  /**
+   * Kẹp popover nằm trọn trong khung nhìn.
+   *
+   * Neo bằng CSS thuần thì phải đoán trước nút lịch nằm ở đâu, mà chỗ đó lại
+   * trôi theo bề rộng màn (dải mốc sẵn xuống dòng ở những ngưỡng khác nhau).
+   * Đo thật thì thấy đoán trật cả hai phía: ở 782px lịch thò sang PHẢI và kéo
+   * cả trang cuộn ngang; ở 390px nó thò sang TRÁI và mất mấy cột ngày đầu tuần.
+   *
+   * Đo rồi kẹp thì đúng ở mọi bề rộng, kể cả những bề rộng chưa ai thử.
+   */
+  function calPlace() {
+    const cal = $('cal');
+    const anchor = $('f-cal').closest('.calwrap');
+    if (!cal || !anchor) return;
+    const M = 8;
+    cal.style.right = 'auto';
+    cal.style.left = '0px';
+    const a = anchor.getBoundingClientRect();
+    const w = cal.offsetWidth;
+    // `clientWidth` chứ KHÔNG `innerWidth`: innerWidth tính cả thanh cuộn dọc,
+    // nên kẹp theo nó là lịch vẫn thò ra đúng bằng bề rộng thanh cuộn (~15px)
+    // và trang vẫn cuộn ngang. Đo ra ở 820/782/740/560/320px, mỗi chỗ lố vài
+    // pixel — vừa đủ để không ai nhìn thấy nguyên nhân, chỉ thấy trang bị rung
+    // ngang khi mở lịch.
+    const vw = document.documentElement.clientWidth;
+    let left = 0;
+    const over = (a.left + left + w) - (vw - M);
+    if (over > 0) left -= over;
+    if (a.left + left < M) left = M - a.left;
+    cal.style.left = Math.round(left) + 'px';
   }
   function closeCal() {
     calOpen = false;
+    calHover = '';
     $('cal').hidden = true;
     $('f-cal').setAttribute('aria-expanded', 'false');
   }
 
-  function monthHtml(ym) {
-    const first = ym + '-01';
+  /**
+   * Khung một tháng. CHỈ cấu trúc + những gì cố định trong suốt lần vẽ này
+   * (ngày nào ngoài tầm, ngày nào là hôm nay). Trạng thái chọn/rê KHÔNG nằm ở
+   * đây — nó do calPaint() bôi lên sau, và bôi lại được bao nhiêu lần tuỳ ý.
+   */
+  function monthShell(ym) {
     // getUTCDay: CN = 0. Tuần bắt đầu THỨ HAI nên xoay về Mon = 0.
-    const lead = (new Date(first + 'T00:00:00Z').getUTCDay() + 6) % 7;
+    const lead = (new Date(ym + '-01T00:00:00Z').getUTCDay() + 6) % 7;
     const days = new Date(Date.UTC(+ym.slice(0, 4), +ym.slice(5, 7), 0)).getUTCDate();
     const min = calMin(), max = today();
-    const a = calPick.from, b = calPick.to || calHover || calPick.from;
-    const lo = a && b ? (a < b ? a : b) : a, hi = a && b ? (a < b ? b : a) : a;
 
     let s = `<div class="cal-m"><div class="cal-mh">${esc(MONTH(ym))}</div><div class="cal-g">`;
     s += DOW.map((d) => `<span class="cal-dow">${d}</span>`).join('');
@@ -981,53 +1094,89 @@ h2 .seg-sm { align-self: center; }
     for (let d = 1; d <= days; d++) {
       const iso = `${ym}-${String(d).padStart(2, '0')}`;
       const off = iso > max || iso < min;
-      const inR = !off && lo && hi && iso >= lo && iso <= hi;
-      const edge = iso === lo ? ' e0' : iso === hi ? ' e1' : '';
-      s += `<button type="button" class="cal-d${inR ? ' in' : ''}${edge}${iso === max ? ' now' : ''}"`
+      s += `<button type="button" class="cal-d${iso === max ? ' now' : ''}"`
         + `${off ? ' disabled' : ''} data-d="${iso}">${d}</button>`;
     }
     return s + '</div></div>';
   }
 
-  function drawCal() {
-    const picking = calPick.from && !calPick.to;
+  /** Dựng khung. CHỈ gọi khi mở lịch hoặc đổi tháng — xem luật ở đầu khối này. */
+  function calRender() {
     $('cal').innerHTML =
       `<div class="cal-nav">
          <button type="button" class="btn ghost" data-mv="-1" aria-label="Tháng trước">←</button>
-         <span class="cal-hint">${picking ? 'Chọn ngày kết thúc' : 'Chọn ngày bắt đầu'}</span>
+         <span class="cal-hint"></span>
          <button type="button" class="btn ghost" data-mv="1" aria-label="Tháng sau"${ymAdd(calCursor, 1) >= ymOf(today()) ? ' disabled' : ''}>→</button>
        </div>
-       <div class="cal-ms">${monthHtml(calCursor)}${monthHtml(ymAdd(calCursor, 1))}</div>
+       <div class="cal-ms">${monthShell(calCursor)}${monthShell(ymAdd(calCursor, 1))}</div>
        <div class="cal-ft">
          <span class="dim">Tối đa ${SCHEMA.MAX_RANGE_DAYS} ngày</span>
          <span class="spacer"></span>
          <button type="button" class="btn" data-cancel>Huỷ</button>
        </div>`;
+    calPaint();
+    // Đổi tháng có thể đổi bề rộng (tháng 5 tuần với tháng 6 tuần) — kẹp lại.
+    if (calOpen) calPlace();
+  }
 
-    $('cal').querySelectorAll('[data-mv]').forEach((b) => b.addEventListener('click', () => {
-      calCursor = ymAdd(calCursor, +b.dataset.mv); drawCal();
-    }));
-    $('cal').querySelector('[data-cancel]').addEventListener('click', closeCal);
+  /**
+   * Bôi trạng thái lên các ô SẴN CÓ. Không tạo, không xoá phần tử nào — đây là
+   * hàm duy nhất được phép chạy trong lúc con trỏ đang ở trên lịch.
+   */
+  function calPaint() {
+    const cal = $('cal');
+    const hint = cal.querySelector('.cal-hint');
+    if (hint) hint.textContent = calPick.from && !calPick.to ? 'Chọn ngày kết thúc' : 'Chọn ngày bắt đầu';
 
-    $('cal').querySelectorAll('.cal-d').forEach((b) => {
-      b.addEventListener('mouseenter', () => {
-        // Tô sẵn khoảng khi rê chuột, chỉ trong lúc đang chọn đầu thứ hai —
-        // không thì không nhìn ra mình sắp chọn tới đâu cho tới khi đã bấm.
-        if (calPick.from && !calPick.to) { calHover = b.dataset.d; drawCal(); }
-      });
-      b.addEventListener('click', () => {
-        const d = b.dataset.d;
-        if (!calPick.from || calPick.to) { calPick = { from: d, to: '' }; calHover = ''; drawCal(); return; }
-        let from = calPick.from, to = d;
-        if (from > to) { const t = from; from = to; to = t; }
-        // Kẹp ngay tại chỗ để người chọn thấy hậu quả liền, thay vì bấm xong
-        // mới nhận về một khoảng bị máy chủ cắt ngắn không báo trước.
-        if (spanDays(from, to) > SCHEMA.MAX_RANGE_DAYS) from = addDays(to, -(SCHEMA.MAX_RANGE_DAYS - 1));
-        Object.assign(FILTER, { preset: '', from, to });
-        closeCal();
-        applyFilter();
-      });
-    });
+    const a = calPick.from, b = calPick.to || calHover || calPick.from;
+    const lo = a && b ? (a < b ? a : b) : a, hi = a && b ? (a < b ? b : a) : a;
+    for (const el of cal.querySelectorAll('.cal-d')) {
+      const iso = el.dataset.d;
+      const inR = !el.disabled && lo && hi && iso >= lo && iso <= hi;
+      el.classList.toggle('in', Boolean(inR));
+      el.classList.toggle('e0', Boolean(inR) && iso === lo);
+      el.classList.toggle('e1', Boolean(inR) && iso === hi);
+    }
+  }
+
+  /** Bấm trong lịch. Uỷ nhiệm ở `#cal` nên sống qua mọi lần dựng lại khung. */
+  function onCalClick(e) {
+    const mv = e.target.closest('[data-mv]');
+    if (mv && !mv.disabled) { calCursor = ymAdd(calCursor, +mv.dataset.mv); calRender(); return; }
+    if (e.target.closest('[data-cancel]')) { closeCal(); return; }
+
+    const cell = e.target.closest('.cal-d');
+    if (!cell || cell.disabled) return;
+    const d = cell.dataset.d;
+
+    // Đầu thứ nhất: chỉ ghi nhận rồi bôi lại. KHÔNG dựng lại khung — con trỏ
+    // đang nằm ngay trên ô vừa bấm, và cú bấm tiếp theo sẽ rơi vào đây.
+    if (!calPick.from || calPick.to) { calPick = { from: d, to: '' }; calHover = ''; calPaint(); return; }
+
+    let from = calPick.from, to = d;
+    if (from > to) { const t = from; from = to; to = t; }
+    // Kẹp ngay tại chỗ để người chọn thấy hậu quả liền, thay vì bấm xong mới
+    // nhận về một khoảng bị máy chủ cắt ngắn không báo trước.
+    if (spanDays(from, to) > SCHEMA.MAX_RANGE_DAYS) from = addDays(to, -(SCHEMA.MAX_RANGE_DAYS - 1));
+    calPick = { from, to };
+    Object.assign(FILTER, { preset: '', from, to });
+    closeCal();
+    applyFilter();
+  }
+
+  /**
+   * Tô sẵn khoảng khi rê chuột, chỉ trong lúc đang chọn đầu thứ hai — không thì
+   * không nhìn ra mình sắp chọn tới đâu cho tới khi đã bấm.
+   *
+   * `mouseover` chứ không `mouseenter`: mouseenter KHÔNG nổi bọt nên không uỷ
+   * nhiệm được, mà gắn từng ô thì lại quay về đúng cái bẫy đã nói ở trên.
+   */
+  function onCalHover(e) {
+    if (!calPick || !calPick.from || calPick.to) return;
+    const cell = e.target.closest('.cal-d');
+    if (!cell || cell.disabled || cell.dataset.d === calHover) return;
+    calHover = cell.dataset.d;
+    calPaint();
   }
 
   // ══════════════════════════════════════════════════════════════════════════
@@ -1060,22 +1209,22 @@ h2 .seg-sm { align-self: center; }
       d: iAge > 6 ? 'Lâu bất thường — kiểm tra server còn ghi audit không' : '' },
   ];
 
-  $('watchdog').innerHTML = watches.map((c) => {
+  const watchdogRebuilt = setHtml($('watchdog'), watches.map((c) => {
     const mo = c.key === 'canary' && (D.canaryProbes || []).length;
     return `<div class="item sev-x${mo ? ' js-canary' : ''}" style="--sev: var(--${c.sev})"${mo ? ' role="button" tabindex="0" title="Bấm để xem từng probe"' : ''}>
       <div class="ic" aria-hidden="true">${ICON[c.sev]}</div>
-      <div><div class="k">${esc(c.k)}${mo ? '<span class="more">xem probe ▾</span>' : ''}</div>
+      <div><div class="k">${esc(c.k)}${mo ? '<span class="more"></span>' : ''}</div>
         <div class="v">${esc(c.v)}</div>${c.d ? `<div class="d">${esc(c.d)}</div>` : ''}</div>
     </div>`;
-  }).join('');
+  }).join(''));
 
   const worst = watches.reduce((a, c) => (RANK[c.sev] > RANK[a] ? c.sev : a), 'good');
   const VERDICT = {
     good: ['●', 'Hệ thống ổn'], warning: ['▲', 'Có cảnh báo'],
     serious: ['▲', 'Có sự cố'], critical: ['■', 'Cần chú ý ngay'],
   };
-  $('verdict').innerHTML = `<span class="verdict" style="--sev: var(--${worst}); color: var(--${worst})">
-      <span class="dot"></span>${VERDICT[worst][1]}</span>`;
+  setHtml($('verdict'), `<span class="verdict" style="--sev: var(--${worst}); color: var(--${worst})">
+      <span class="dot"></span>${VERDICT[worst][1]}</span>`);
 
   // ── KPI ──────────────────────────────────────────────────────────────
   const k = D.kpi;
@@ -1084,7 +1233,7 @@ h2 .seg-sm { align-self: center; }
   // đi tiếp được, đưa lên đây thì bảng lúc nào cũng đỏ trong khi tool chạy mượt.
   const blockSev = k.blockRate >= 5 ? 'critical' : k.blocked ? 'warning' : 'good';
   const nd = D.daily.length;
-  $('kpi').innerHTML = [
+  setHtml($('kpi'), [
     // Mọi con số dưới đây là CỦA KHOẢNG ĐANG LỌC, không phải "từ trước tới
     // giờ". Ghi rõ số ngày có dữ liệu ngay dưới ô hero: hai người mở hai màn
     // hình với hai bộ lọc khác nhau sẽ cãi nhau về cùng một con số nếu không có
@@ -1100,7 +1249,7 @@ h2 .seg-sm { align-self: center; }
   ].map((t) => `<div class="card kpi${t.hero ? ' hero' : ''}">
       <div class="k">${esc(t.k)}</div>
       <div class="v num"${t.sev ? ` style="color: var(--${t.sev})"` : ''}>${t.v}</div>
-      <div class="d">${esc(t.d)}</div></div>`).join('');
+      <div class="d">${esc(t.d)}</div></div>`).join(''));
 
   // ── người dùng ───────────────────────────────────────────────────────
   // Cột "Không dùng được" CHỈ hiện khi có người thật sự bị chặn. Một cột toàn
@@ -1141,12 +1290,12 @@ h2 .seg-sm { align-self: center; }
   const drawPeople = () => {
     const { from } = pageOf('people', D.people.length);
     $('people-n').textContent = D.people.length ? `· ${nf(D.people.length)}` : '';
-    $('t-people').innerHTML = !D.people.length
+    setHtml($('t-people'), !D.people.length
       ? '<tbody><tr><td class="dim">Không có ai khớp bộ lọc này.</td></tr></tbody>'
       : '<thead><tr><th>Người</th><th>Cắm bằng</th><th class="r">Lượt</th>' +
         (anyBlocked ? '<th class="r nw">Không dùng được</th>' : '') +
         '<th class="r">Tool</th><th class="r nw">Token còn</th><th class="r nw">Gần nhất</th></tr></thead><tbody>' +
-        D.people.slice(from, from + PAGE_SIZE).map(personRow).join('') + '</tbody>';
+        D.people.slice(from, from + PAGE_SIZE).map(personRow).join('') + '</tbody>');
     pager('people-pager', 'people', D.people.length, drawPeople);
   };
   drawPeople();
@@ -1156,7 +1305,7 @@ h2 .seg-sm { align-self: center; }
   const drawCanary = () => {
     const { from } = pageOf('canary', cp.length);
     $('canary-n').textContent = cp.length ? `· ${nf(cp.length)}` : '';
-    $('t-canary').innerHTML = !cp.length
+    setHtml($('t-canary'), !cp.length
       ? '<tbody><tr><td class="dim">Chưa có chi tiết probe — chờ nhịp tim canary kế tiếp.</td></tr></tbody>'
       : '<thead><tr><th>Tool</th><th>Kết quả</th><th class="r nw">Thời gian</th><th class="r nw">Mã lỗi</th></tr></thead><tbody>' +
         cp.slice(from, from + PAGE_SIZE).map((p) => `<tr>
@@ -1164,7 +1313,7 @@ h2 .seg-sm { align-self: center; }
           <td class="nw"><span class="pill sev-x" style="--sev: var(--${p.ok ? 'good' : 'critical'})"><span class="dot"></span>${p.ok ? 'đạt' : 'hỏng'}</span></td>
           <td class="r num dim nw">${ms(p.ms)}</td>
           <td class="r num nw${p.code ? '' : ' dim'}">${p.code ? esc(p.code) : '—'}</td>
-        </tr>`).join('') + '</tbody>';
+        </tr>`).join('') + '</tbody>');
     pager('canary-pager', 'canary', cp.length, drawCanary);
   };
   drawCanary();
@@ -1174,12 +1323,20 @@ h2 .seg-sm { align-self: center; }
   $('canary-box').hidden = !canaryOpen;
   const cbtn = $('watchdog').querySelector('.js-canary');
   if (cbtn) {
-    const toggle = () => { canaryOpen = !canaryOpen; renderTop(); };
-    cbtn.addEventListener('click', toggle);
-    cbtn.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(); }
-    });
+    // Chữ trên nhãn viết bằng textContent, KHÔNG nhét vào chuỗi HTML ở trên:
+    // nhét vào thì mỗi lần đóng/mở là chuỗi đổi, là dựng lại cả dải canh gác —
+    // đúng thứ setHtml sinh ra để tránh.
     cbtn.querySelector('.more').textContent = canaryOpen ? 'đóng ▴' : 'xem probe ▾';
+    // Gắn MỘT lần cho mỗi lần dựng. Bỏ chốt này thì listener chồng lên nhau sau
+    // mỗi vòng poll: bấm một cái, `canaryOpen` bị lật hai lần, bảng không nhúc
+    // nhích, và nhìn ra y hệt một cái nút hỏng.
+    if (watchdogRebuilt) {
+      const toggle = () => { canaryOpen = !canaryOpen; renderTop(); };
+      cbtn.addEventListener('click', toggle);
+      cbtn.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(); }
+      });
+    }
   }
   }
 
@@ -1268,7 +1425,7 @@ h2 .seg-sm { align-self: center; }
     // mỗi lần — không thì mục vừa bị loại vẫn nằm đó và chọn được.
     const av = measuresFor(VIEW.dim);
     if (!av.some((m) => m.key === VIEW.measure)) VIEW.measure = 'calls';
-    $('f-measure').innerHTML = av.map((m) => `<option value="${esc(m.key)}">${esc(m.label)}</option>`).join('');
+    setHtml($('f-measure'), av.map((m) => `<option value="${esc(m.key)}">${esc(m.label)}</option>`).join(''));
     $('f-dim').value = VIEW.dim;
     $('f-measure').value = VIEW.measure;
     for (const b of $('f-kind').children) b.setAttribute('aria-pressed', String(b.dataset.v === kindNow()));
@@ -1296,12 +1453,12 @@ h2 .seg-sm { align-self: center; }
     const cutN = rows.length - shown.length;
 
     $('chart-title').textContent = `${me.label} theo ${dim.label.toLowerCase()}`;
-    $('summary').innerHTML = [
+    setHtml($('summary'), [
       `<span>Nguồn dữ liệu <b>${nf(EX.total)}</b> lượt gọi</span>`,
       `<span>Gộp thành <b>${nf(EX.groups)}</b> nhóm</span>`,
       EX.skipped ? `<span>Bỏ qua <b>${nf(EX.skipped)}</b> lượt chưa ghi cột này</span>` : '',
       cutN > 0 ? `<span>Biểu đồ hiện <b>${nf(shown.length)}</b> nhóm lớn nhất, còn <b>${nf(cutN)}</b> ở bảng dưới</span>` : '',
-    ].filter(Boolean).join('');
+    ].filter(Boolean).join(''));
 
     /**
      * Với phép đo "Lượt gọi", cột vẽ CHỒNG: phần chạy được xanh, phần bị chặn
@@ -1313,21 +1470,25 @@ h2 .seg-sm { align-self: center; }
      */
     const stacked = me.key === 'calls' && shown.some((r) => r.blocked);
     const seen = [...new Set(shown.map(health))];
-    $('legend').innerHTML = stacked
+    setHtml($('legend'), stacked
       ? '<span><i style="background:var(--good)"></i>Chạy được</span>'
         + '<span><i style="background:var(--critical)"></i>Không dùng được</span>'
       // Chú giải chỉ có nghĩa khi thật sự có nhiều màu trên biểu đồ — mọi nhóm
       // đều sạch lỗi thì ba ô màu chỉ là nhiễu.
       : seen.length < 2 ? ''
         : HEALTH.filter((h) => seen.includes(h.sev))
-          .map((h) => `<span><i style="background: var(--${h.sev})"></i>${esc(h.label)}</span>`).join('');
+          .map((h) => `<span><i style="background: var(--${h.sev})"></i>${esc(h.label)}</span>`).join(''));
 
-    $('chart').innerHTML = !shown.length
+    // Vẽ lại biểu đồ là huỷ mọi <rect>/<circle> đang có. Vòng poll 30s chạy
+    // qua đây, nên nếu SVG không đổi thì đừng đụng vào: con trỏ đang đặt trên
+    // một cột sẽ mất tooltip giữa chừng, và gắn lại bindTip lên phần tử cũ là
+    // chồng listener.
+    const chartRebuilt = setHtml($('chart'), !shown.length
       ? emptyChart()
       : kind === 'hbar' ? hbar(shown, me, stacked)
-        : kind === 'bar' ? vbar(shown, me, stacked) : line(shown, me);
+        : kind === 'bar' ? vbar(shown, me, stacked) : line(shown, me));
 
-    $('chart').querySelectorAll('[data-i]').forEach((el) => {
+    if (chartRebuilt) $('chart').querySelectorAll('[data-i]').forEach((el) => {
       const r = shown[+el.dataset.i];
       bindTip(el, `<b>${esc(cut(r.key, 40))}</b><br>${esc(me.label)}: ${esc(fmt(r[me.key], me.fmt))}<br>
         ${nf(r.calls)} lượt · p95 ${ms(r.p95)}` +
@@ -1464,7 +1625,7 @@ h2 .seg-sm { align-self: center; }
     // Nhóm theo tool ra 39 dòng, theo giờ ra 24 — đổ hết xuống thì bảng dài
     // gấp ba biểu đồ ngay trên nó. Phân trang dùng chung với bảng người.
     const { from: exFrom } = pageOf('exrows', rows.length);
-    $('t-rows').innerHTML = !rows.length
+    setHtml($('t-rows'), !rows.length
       ? '<tbody><tr><td class="dim">Không có nhóm nào để hiện.</td></tr></tbody>'
       : `<thead><tr><th>${esc(dim.label)}</th>` +
         MS.map((m) => `<th class="r nw"${m.key === me.key ? ' style="color:var(--series-1)"' : ''}>${esc(m.label)}</th>`).join('') +
@@ -1476,7 +1637,7 @@ h2 .seg-sm { align-self: center; }
             ? `<td class="r num nw" style="font-weight:660">${esc(fmt(r[m.key], m.fmt))}</td>`
             : `<td class="r num nw dim">${esc(fmt(r[m.key], m.fmt))}</td>`).join('') +
           `<td class="r num dim nw">${dt(r.last)}</td></tr>`).join('') +
-        '</tbody>';
+        '</tbody>');
     pager('rows-pager', 'exrows', rows.length, () => drawTable(rows, me, dim));
   }
 
@@ -1624,10 +1785,26 @@ h2 .seg-sm { align-self: center; }
 
     // Lỗi mạng thoáng qua thì giữ số cũ, không làm trắng trang — chỉ đổi dấu
     // hiệu ở góc trên để người xem biết con số đang đứng yên.
+    /**
+     * Hàng rào cuối cùng cho cùng một lớp lỗi.
+     *
+     * `setHtml` đã lo phần lớn: poll mà số không đổi thì không đụng DOM. Nhưng
+     * đúng lúc có người vừa gọi tool thì số ĐỔI THẬT, DOM dựng lại thật, và nếu
+     * nó rơi vào giữa `mousedown` với `mouseup` thì cú bấm vẫn bốc hơi.
+     *
+     * Nút chuột đang giữ = có một thao tác đang dở. Hoãn 30 giây nữa, số liệu
+     * không mất đi đâu cả.
+     */
+    let pressing = false;
+    addEventListener('pointerdown', () => { pressing = true; }, true);
+    for (const ev of ['pointerup', 'pointercancel', 'blur']) {
+      addEventListener(ev, () => { pressing = false; }, true);
+    }
+
     setInterval(() => {
       // Đang mở lịch thì hoãn: vẽ lại giữa chừng là lịch tự đóng dưới tay người
       // đang chọn dở.
-      if (calOpen) return;
+      if (calOpen || pressing) return;
       refreshQuiet();
     }, REFRESH_MS);
   })();

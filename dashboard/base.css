@@ -406,11 +406,12 @@ h2 .seg-sm { align-self: center; }
   background: var(--wash); color: color-mix(in srgb, var(--series-1) 70%, var(--ink)); }
 .cal-btn.on .cal-ic { color: inherit; }
 
+/* Vị trí ngang do calPlace() trong template đo và kẹp — CSS không đoán nổi nút
+   lịch nằm ở đâu, vì chỗ đó trôi theo bề rộng màn. `min-width` co lại trên màn
+   siêu hẹp để popover không rộng hơn chính khung nhìn. */
 .cal { position: absolute; z-index: 40; top: calc(100% + 8px); left: 0;
   background: var(--card); border: 1px solid var(--rule); border-radius: 14px;
-  box-shadow: var(--elev-hi); padding: 12px; min-width: 300px; }
-/* Gần mép phải màn thì thả về bên phải, không thì lịch tràn ra ngoài khung. */
-@media (max-width: 700px) { .cal { left: auto; right: 0; } }
+  box-shadow: var(--elev-hi); padding: 12px; min-width: min(300px, calc(100vw - 40px)); }
 .cal-nav { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 8px; }
 .cal-nav .btn { padding: 4px 10px; }
 .cal-hint { font-size: var(--fs-2); font-weight: 640; color: var(--ink-2); }
