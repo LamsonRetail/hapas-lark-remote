@@ -1,5 +1,6 @@
 import { DIM_BY_KEY } from './explore-schema.mjs';
 import { impactedSet } from './impact.mjs';
+import { localDay, localHour } from './range.mjs';
 
 /**
  * Gộp hàng audit_logs thô theo MỘT cột.
@@ -23,7 +24,7 @@ export const SKIP_CLIENTS = new Set(['local-admin', 'canary', 'revoke-test-a']);
  */
 export const EXPLORE_COLS = ['created_at', 'tool_name', 'user_name', 'client_id', 'ok', 'duration_ms', 'lark_code', 'source', 'args', 'client_app'];
 
-export function aggregate({ rows, dim: dimKey, include = 'tools', user = '' }) {
+export function aggregate({ rows, dim: dimKey, include = 'tools', user = '', app = '' }) {
   const dim = DIM_BY_KEY.get(dimKey);
   if (!dim) throw new Error(`Cột không hợp lệ: ${dimKey}`);
 
@@ -37,14 +38,16 @@ export function aggregate({ rows, dim: dimKey, include = 'tools', user = '' }) {
   });
 
   /**
-   * Danh sách người lấy TRƯỚC khi lọc, không phải sau — lọc rồi mới liệt kê thì
-   * chọn xong một người là ô chọn chỉ còn đúng người đó, không đổi sang ai được.
+   * Danh sách người/ứng dụng lấy TRƯỚC khi lọc, không phải sau — lọc rồi mới
+   * liệt kê thì chọn xong một người là ô chọn chỉ còn đúng người đó, không đổi
+   * sang ai được nữa.
    */
   const users = [...new Set(inScope.map((r) => r.user_name).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'vi'));
+  const apps = [...new Set(inScope.map((r) => r.client_app).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'vi'));
 
   // Nhóm theo tool + lọc một người = "người này đã gọi những tool nào" — mức
   // bóc tách thứ hai mà một cột nhóm đơn lẻ không trả lời được.
-  const kept = user ? inScope.filter((r) => r.user_name === user) : inScope;
+  const kept = inScope.filter((r) => (!user || r.user_name === user) && (!app || r.client_app === app));
 
   /**
    * Tính trên inScope chứ không trên `kept`: luật "được cứu" cần lượt thành
@@ -55,8 +58,9 @@ export function aggregate({ rows, dim: dimKey, include = 'tools', user = '' }) {
 
   /** Nhãn nhóm. `ok` là boolean, `lark_code` hay null — cả hai cần chữ, không phải "null"/"false". */
   const keyOf = (r) => {
-    if (dim.key === 'day') return r.created_at.slice(0, 10);
-    if (dim.key === 'hour') return r.created_at.slice(11, 13) + ':00';
+    // Ngày/giờ cắt theo GIỜ VN, không theo UTC — xem ghi chú TZ ở range.mjs.
+    if (dim.key === 'day') return localDay(r.created_at);
+    if (dim.key === 'hour') return localHour(r.created_at);
     if (dim.key === 'ok') return r.ok === false ? 'Lỗi' : 'Thành công';
     // null = dòng ghi trước khi có cột client_app. Trả null để BỎ HẲN khỏi
     // phép nhóm, xem `skipped` bên dưới.
@@ -101,5 +105,8 @@ export function aggregate({ rows, dim: dimKey, include = 'tools', user = '' }) {
   // lượt gọi để cái đáng nhìn nằm trên đầu.
   out.sort(dim.time ? (a, b) => a.key.localeCompare(b.key) : (a, b) => b.calls - a.calls);
 
-  return { dim: dim.key, include, user, users, total: kept.length - skipped, skipped, groups: out.length, rows: out };
+  return {
+    dim: dim.key, include, user, app, users, apps,
+    total: kept.length - skipped, skipped, groups: out.length, rows: out,
+  };
 }

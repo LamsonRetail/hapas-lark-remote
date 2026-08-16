@@ -55,7 +55,14 @@ export const MEASURES = [
   { key: 'tools', label: 'Số tool khác nhau', fmt: 'int' },
 ];
 
-export const WINDOWS = [7, 30, 90];
+/**
+ * Khoảng thời gian KHÔNG còn ở đây.
+ *
+ * Trước là `WINDOWS = [7, 30, 90]` — vừa là danh sách trắng của endpoint, vừa
+ * là ba cái nút trên trang, và chỉ điều khiển đúng khu "Đào sâu". Nay khoảng
+ * thời gian là bộ lọc TOÀN CỤC (mọi con số trên trang đều theo nó) nên nó lên
+ * range.mjs, nơi cả compute.mjs lẫn api/data.js cũng với tới được.
+ */
 
 export const DIM_BY_KEY = new Map(DIMENSIONS.map((d) => [d.key, d]));
 export const MEASURE_BY_KEY = new Map(MEASURES.map((m) => [m.key, m]));

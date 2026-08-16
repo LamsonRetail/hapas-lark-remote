@@ -90,16 +90,31 @@
   .nav a[aria-current] { background: var(--wash); color: color-mix(in srgb, var(--series-1) 70%, var(--ink));
     border-color: color-mix(in srgb, var(--series-1) 26%, transparent); }
   .head-right { display: flex; flex-direction: column; align-items: flex-end; gap: 8px; }
-  .clock { display: inline-flex; align-items: center; gap: 9px; font-size: var(--fs-5); font-weight: 700;
-    letter-spacing: .01em; color: var(--ink); font-variant-numeric: tabular-nums; }
-  .clock::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--good);
-    box-shadow: 0 0 0 0 color-mix(in srgb, var(--good) 45%, transparent); animation: livepulse 2.2s infinite; }
+
+  /* Dòng phạm vi dưới tiêu đề: "12/08 – 16/08 · 5 ngày · tất cả mọi người".
+     Viết ra thay vì bắt người đọc nhìn ngược lên thanh lọc rồi tự ghép lại. */
+  .scope { font-size: var(--fs-3); color: var(--ink-2); margin-top: 3px; }
+  .scope b { color: var(--ink); font-weight: 660; font-variant-numeric: tabular-nums; }
+
+  /* ── Dấu thời gian ────────────────────────────────────────────────────
+     Chỗ này TỪNG là đồng hồ chạy từng giây. Nó nhấp nháy ngay cạnh badge phán
+     quyết, mà chuyển động luôn thắng màu sắc ở tầm nhìn ngoại vi — con số quan
+     trọng nhất trên trang bị chính cái đồng hồ trang trí giành mất chỗ.
+     Giờ chỉ nhích khi có dữ liệu MỚI, và chấm nhịp là thứ duy nhất còn động. */
+  .stamp { display: inline-flex; align-items: center; gap: 8px; font-size: var(--fs-2);
+    color: var(--ink-3); font-variant-numeric: tabular-nums; }
+  .stamp b { color: var(--ink-2); font-weight: 640; }
+  .stamp.stale { color: var(--warning); }
+  .stamp.stale b { color: var(--warning); }
+  .live { width: 7px; height: 7px; border-radius: 50%; background: var(--good); flex: none;
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--good) 45%, transparent); animation: livepulse 2.4s infinite; }
+  .live.off { background: var(--ink-3); animation: none; }
   @keyframes livepulse {
     0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--good) 45%, transparent); }
-    70% { box-shadow: 0 0 0 8px transparent; }
+    70% { box-shadow: 0 0 0 7px transparent; }
     100% { box-shadow: 0 0 0 0 transparent; }
   }
-  @media (prefers-reduced-motion: reduce) { .clock::before { animation: none; } }
+  @media (prefers-reduced-motion: reduce) { .live { animation: none; } }
 
   /* Nhãn tầng — mốc phân cấp CAO hơn tiêu đề thẻ, để mắt biết đang ở khu nào */
   .zone { font-size: var(--fs-2); font-weight: 700; letter-spacing: .06em; text-transform: uppercase;
@@ -116,10 +131,19 @@
 
   .g2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
   /* Ô đầu rộng hơn vì nó là ô hero. Năm cột từ khi tách "Lỗi" ra riêng — gộp
-     vào ô "Lượt gọi" thì con số cần nhìn nhất lại nằm ở dòng chú thích mờ. */
+     vào ô "Lượt gọi" thì con số cần nhìn nhất lại nằm ở dòng chú thích mờ.
+
+     NĂM thẻ, nên điểm gãy phải chọn theo ước số của 5, không theo con số nào
+     nghe hợp lý. Bản trước rơi xuống 3 cột: 5 thẻ thành hàng 3 + hàng 2, để lại
+     một khoảng trống bằng cả một thẻ ở góc dưới phải — mắt đọc khoảng trống đó
+     thành "còn một ô nữa chưa tải xong". Hai cột với ô hero ăn trọn hàng đầu
+     thì mọi hàng đều đầy ở mọi bề rộng. */
   .g4 { display: grid; grid-template-columns: 1.4fr repeat(4, 1fr); gap: 14px; }
-  @media (max-width: 1180px) { .g4 { grid-template-columns: repeat(3, 1fr); } }
-  @media (max-width: 920px) { .g2 { grid-template-columns: 1fr; } .g4 { grid-template-columns: repeat(2, 1fr); } }
+  @media (max-width: 1240px) {
+    .g4 { grid-template-columns: repeat(2, 1fr); }
+    .g4 .hero { grid-column: 1 / -1; }
+  }
+  @media (max-width: 920px) { .g2 { grid-template-columns: 1fr; } }
   @media (max-width: 560px) { .g4 { grid-template-columns: 1fr; } }
 
   /* ── Phán quyết + dải trạng thái (Tầng 1) ── */
@@ -240,6 +264,12 @@
   padding: 6px 13px; border-radius: 6px; border: 0; background: transparent; color: var(--ink-2); }
 .seg button:hover { color: var(--ink); }
 .seg button[aria-pressed="true"] { background: var(--card); color: var(--ink); box-shadow: var(--elev); }
+/* Khoá ≠ hỏng. Mờ đi và đổi con trỏ để thấy NGAY là nút này cố tình không bấm
+   được — bản tĩnh dùng tới (xem lockGlobalFilters). Vẫn giữ nền cho ô đang
+   chọn, vì nó còn nhiệm vụ nói "đây là khoảng bạn đang xem". */
+.seg button:disabled, .cal-btn:disabled, .mini:disabled { cursor: not-allowed; opacity: .55; }
+.seg button:disabled:hover { color: var(--ink-2); }
+.cal-btn:disabled:hover, .mini:disabled:hover { border-color: var(--rule); }
 
 .chk { display: inline-flex; align-items: center; gap: 8px; font-size: var(--fs-3); color: var(--ink-2); cursor: pointer; padding-bottom: 9px; }
 .chk input { width: 16px; height: 16px; accent-color: var(--series-1); cursor: pointer; }
@@ -279,3 +309,158 @@
 .seg-sm button { font-size: var(--fs-2); font-weight: 650; padding: 4px 9px; border-radius: 5px;
   text-transform: none; letter-spacing: 0; }
 h2 .seg-sm { align-self: center; }
+
+/* ══ Thanh lọc toàn cục ═══════════════════════════════════════════════════
+   DÍNH lên đỉnh màn hình. Không phải hiệu ứng cho vui: đổi bộ lọc trong lúc
+   đang nhìn kết quả là thao tác chính của trang, mà thanh lọc trôi mất khi cuộn
+   thì mỗi lần đổi phải cuộn lên, bấm, cuộn xuống — và tới lúc nhìn lại thì đã
+   quên mất con số cũ để mà so.
+
+   Âm lề hai bên đúng bằng padding của .wrap: thiếu nó thì lúc dính, nội dung
+   cuộn qua sẽ lộ ra ở hai dải mép trái/phải ngay cạnh thanh. */
+.filterbar { position: sticky; top: 0; z-index: 25;
+  margin: 0 calc(-1 * clamp(16px, 3vw, 40px)); padding: 10px clamp(16px, 3vw, 40px);
+  display: flex; flex-direction: column; gap: 8px;
+  background: color-mix(in srgb, var(--plane) 82%, transparent);
+  border-bottom: 1px solid transparent; transition: border-color .18s ease, box-shadow .18s ease; }
+@supports (backdrop-filter: blur(1px)) {
+  .filterbar { backdrop-filter: saturate(1.6) blur(12px); }
+}
+/* Viền + bóng CHỈ khi đã dính. Lúc trang chưa cuộn thì nó là một thẻ như mọi
+   thẻ khác — kẻ sẵn đường ngang ở đó là thêm một nét chia chưa có gì để chia. */
+/* `--rule` chứ không `--hairline`: hairline là 7% mờ, đủ để chia hai thẻ nằm
+   yên cạnh nhau nhưng KHÔNG đủ khi có cả một trang chữ trôi qua ngay dưới —
+   lúc đó thanh trông như dán đè lên nội dung chứ không phải nổi lên trên nó. */
+.filterbar.stuck { border-bottom-color: var(--rule); box-shadow: 0 8px 20px -16px rgba(0, 0, 0, .65); }
+
+.fb { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 18px; padding: 10px 14px; }
+/* `flex-wrap` ở ĐÂY nữa, không chỉ ở .fb: nhóm "Khoảng" chứa dải bốn mốc cộng
+   nút lịch, tổng ~370px. Trên màn 390px nó không xuống dòng được mà thò hẳn ra
+   ngoài khung, kéo theo cả trang cuộn ngang. */
+.fb-grp { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-width: 0; }
+.fb-lb { font-size: var(--fs-1); font-weight: 680; letter-spacing: .06em; text-transform: uppercase;
+  color: var(--ink-3); white-space: nowrap; }
+/* Ô chọn trong thanh lọc thấp hơn ô chọn trong thẻ: thanh này luôn nằm trên
+   màn hình nên mỗi pixel chiều cao của nó là một pixel vĩnh viễn mất đi. */
+.mini { font: inherit; font-size: var(--fs-3); color: var(--ink); background: var(--card);
+  border: 1px solid var(--rule); border-radius: 8px; padding: 6px 28px 6px 10px; cursor: pointer;
+  max-width: 210px; appearance: none;
+  background-image: linear-gradient(45deg, transparent 50%, var(--ink-3) 50%), linear-gradient(135deg, var(--ink-3) 50%, transparent 50%);
+  background-position: calc(100% - 14px) 53%, calc(100% - 10px) 53%;
+  background-size: 5px 5px, 5px 5px; background-repeat: no-repeat; }
+.mini:hover { border-color: var(--ink-3); }
+.mini:focus-visible { outline: 2px solid var(--series-1); outline-offset: 1px; }
+
+/* ── Co lại trên màn hẹp ──────────────────────────────────────────────────
+   Thanh này DÍNH, nên mỗi pixel chiều cao của nó là một pixel mất vĩnh viễn
+   khỏi phần đọc. Đo ở 782px: ba hàng, 137px — hơn 20% một màn 678px, chỉ để
+   bày ba cái nút.
+
+   Bỏ nhãn trước tiên vì chúng là thứ thừa nhất: ô chọn đã tự ghi "Tất cả mọi
+   người" và "Tất cả ứng dụng", còn dải mốc thì ghi thẳng "7 ngày". Chữ
+   "NGƯỜI" đứng cạnh ô ghi "Tất cả mọi người" không thêm được gì. */
+@media (max-width: 1100px) {
+  .fb-lb { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  .fb { gap: 8px 12px; }
+  /* Dưới ngưỡng này ba nhóm không còn đứng chung một hàng, nên phải chọn CÁCH
+     xuống hàng thay vì để trình duyệt chọn hộ. Bản trước để mặc: ra hàng đầu
+     [khoảng][người], hàng hai [ứng dụng] lửng lơ một mình — vẫn hai hàng, vẫn
+     đúng bằng đó chiều cao, nhưng nhìn như bị vỡ. Cho khoảng ăn trọn hàng đầu
+     thì hai ô chọn thành một cặp cân nhau ở hàng dưới. */
+  .fb-grp:first-child { flex: 1 0 100%; }
+  .fb-grp:has(.mini) { flex: 1 1 150px; }
+  .mini { width: 100%; max-width: none; }
+}
+@media (max-width: 700px) {
+  /* THÔI DÍNH trên điện thoại.
+     Thanh dính đáng giá khi đổi xong còn nhìn thấy kết quả ngay — trên màn hẹp
+     nó xuống ba hàng, cao 250px, và đó là 40% một màn điện thoại bị chiếm chỗ
+     vĩnh viễn để bày đúng ba cái nút. Ở đây cuộn lên đầu trang mới là cách
+     người ta thật sự dùng, và nó không tốn gì cả. */
+  .filterbar { position: static; padding: 8px clamp(16px, 3vw, 40px); backdrop-filter: none; background: transparent; }
+  .filterbar.stuck { border-bottom-color: transparent; box-shadow: none; }
+  .fb { padding: 8px 10px; }
+  .seg button { padding: 6px 10px; }
+}
+/* Bốn mốc trên một hàng là ~250px — trên điện thoại thì cho chúng tự xuống
+   dòng, còn hơn để dải nút đẩy nút lịch ra khỏi màn hình. */
+@media (max-width: 560px) { .seg { flex-wrap: wrap; } }
+/* Chỉ hiện khi có gì BẤT NGỜ cần nói — khoảng vừa bị kẹp biên, hoặc bộ lọc ứng
+   dụng đang âm thầm bỏ qua đống dòng ghi trước khi cột đó tồn tại. */
+.fb-note { display: flex; flex-wrap: wrap; gap: 6px 18px; font-size: var(--fs-2); color: var(--warning);
+  padding: 0 4px; }
+
+/* ── Nút mở lịch ──────────────────────────────────────────────────────────
+   ĐỨNG CẠNH các mốc sẵn, không thay chúng: "30 ngày" là một cú bấm, còn qua
+   lịch là mở, định vị tháng, bấm hai đầu — bốn thao tác cho đúng thứ mà hầu
+   hết lượt mở trang cần. */
+.calwrap { position: relative; }
+.cal-btn { font: inherit; font-size: var(--fs-3); font-weight: 600; cursor: pointer; white-space: nowrap;
+  display: inline-flex; align-items: center; gap: 7px; padding: 7px 12px; border-radius: 9px;
+  border: 1px solid var(--rule); background: var(--card); color: var(--ink-2); font-variant-numeric: tabular-nums; }
+.cal-btn:hover { border-color: var(--ink-3); color: var(--ink); }
+.cal-btn .cal-ic { font-size: var(--fs-2); color: var(--ink-3); }
+/* Đang dùng khoảng tay thì nút này CHÍNH LÀ ô đang chọn — phải nhìn ra ngay,
+   không thì dải mốc sẵn bên cạnh trông như không có cái nào được chọn cả. */
+.cal-btn.on { border-color: color-mix(in srgb, var(--series-1) 45%, transparent);
+  background: var(--wash); color: color-mix(in srgb, var(--series-1) 70%, var(--ink)); }
+.cal-btn.on .cal-ic { color: inherit; }
+
+.cal { position: absolute; z-index: 40; top: calc(100% + 8px); left: 0;
+  background: var(--card); border: 1px solid var(--rule); border-radius: 14px;
+  box-shadow: var(--elev-hi); padding: 12px; min-width: 300px; }
+/* Gần mép phải màn thì thả về bên phải, không thì lịch tràn ra ngoài khung. */
+@media (max-width: 700px) { .cal { left: auto; right: 0; } }
+.cal-nav { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 8px; }
+.cal-nav .btn { padding: 4px 10px; }
+.cal-hint { font-size: var(--fs-2); font-weight: 640; color: var(--ink-2); }
+.cal-ms { display: flex; gap: 18px; }
+/* Một tháng trên màn hẹp. Hai tháng cạnh nhau là 560px bề ngang — trên điện
+   thoại nó đẩy nửa cái lịch ra ngoài màn hình. */
+@media (max-width: 700px) { .cal-ms > .cal-m + .cal-m { display: none; } }
+.cal-mh { font-size: var(--fs-2); font-weight: 680; color: var(--ink); text-align: center; margin-bottom: 6px; }
+.cal-g { display: grid; grid-template-columns: repeat(7, 32px); gap: 1px; }
+.cal-dow { font-size: var(--fs-1); color: var(--ink-3); text-align: center; padding-bottom: 4px; font-weight: 640; }
+.cal-d { font: inherit; font-size: var(--fs-2); font-variant-numeric: tabular-nums; cursor: pointer;
+  height: 30px; border: 0; background: transparent; color: var(--ink-2); border-radius: 0; }
+.cal-d:hover:not(:disabled) { background: var(--raise); color: var(--ink); }
+.cal-d:disabled { color: color-mix(in srgb, var(--ink-3) 45%, transparent); cursor: default; }
+/* Dải liền mạch giữa hai đầu: bo góc chỉ ở hai đầu, ô giữa để vuông. Bo hết
+   thì dải đứt thành một chuỗi viên thuốc rời và không đọc ra là một khoảng. */
+.cal-d.in { background: var(--wash); color: color-mix(in srgb, var(--series-1) 70%, var(--ink)); }
+.cal-d.e0 { border-radius: 8px 0 0 8px; }
+.cal-d.e1 { border-radius: 0 8px 8px 0; }
+.cal-d.e0.e1 { border-radius: 8px; }
+.cal-d.e0, .cal-d.e1 { background: var(--series-1); color: #fff; font-weight: 700; }
+/* Hôm nay có một chấm dưới chân — mốc định vị duy nhất trong một lưới toàn số. */
+.cal-d.now { box-shadow: inset 0 -3px 0 -1px color-mix(in srgb, var(--series-1) 55%, transparent); }
+.cal-d.now.e0, .cal-d.now.e1 { box-shadow: none; }
+.cal-ft { display: flex; align-items: center; gap: 10px; margin-top: 10px; padding-top: 9px;
+  border-top: 1px solid var(--grid); font-size: var(--fs-2); }
+
+/* ── Ô điều khiển của RIÊNG thẻ biểu đồ ───────────────────────────────────
+   Nằm trong thẻ nó điều khiển, không leo lên thanh lọc chung. Đưa lên đó là
+   tái phạm đúng lỗi cũ theo chiều ngược lại: một thanh trông như lọc cả trang
+   nhưng có nút chỉ đổi được một khối. */
+.cc { display: flex; flex-wrap: wrap; gap: 14px; align-items: flex-end; margin-bottom: 14px; }
+.cc .field select { font-size: var(--fs-3); padding: 7px 30px 7px 11px; }
+
+/* Rỗng vì KHÔNG CÓ GÌ hay rỗng vì lọc quá tay? Hai chuyện khác nhau, và câu thứ
+   hai có cách sửa ngay tại chỗ — nên trạng thái rỗng phải kèm được một cái nút. */
+.empty { display: flex; flex-direction: column; align-items: flex-start; gap: 12px;
+  color: var(--ink-2); font-size: var(--fs-3); padding: 34px 0 30px; }
+.empty-t { font-size: var(--fs-4); }
+
+/* Đang đi lấy số: làm mờ TẠI CHỖ. Thay nội dung bằng chữ "Đang tính…" là thẻ
+   tụt chiều cao và cả trang giật một cái mỗi lần bấm bộ lọc — trên một trang
+   mà thao tác chính là bấm bộ lọc thì đó là cú giật cả ngày. */
+.busy #chart-card, .busy #kpi, .busy .statusbar, #chart-card.one-busy {
+  opacity: .45; pointer-events: none; cursor: progress; transition: opacity .12s ease; }
+@media (prefers-reduced-motion: reduce) {
+  .busy #chart-card, .busy #kpi, .busy .statusbar, #chart-card.one-busy { transition: none; }
+}
+
+/* Dòng đính chính dưới dải canh gác. Nhỏ và mờ, nhưng BẮT BUỘC có: dải đó là
+   thứ duy nhất trên trang không nghe theo bộ lọc, và một ngoại lệ không được
+   nói ra sẽ bị đọc thành lỗi. */
+.rt-note { font-size: var(--fs-2); color: var(--ink-3); margin: -10px 2px 0; }

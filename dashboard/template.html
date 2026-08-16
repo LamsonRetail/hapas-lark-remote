@@ -2,68 +2,98 @@
 
 <style>/*__CSS__*/</style>
 
-<div class="wrap">
+<div class="wrap" id="wrap">
   <header>
     <div>
       <h1>Lark MCP remote</h1>
+      <!-- Câu trả lời cho "tôi đang nhìn cái gì" — viết ra thay vì bắt đọc
+           ngược lên thanh lọc rồi tự ghép lại trong đầu. -->
+      <div class="scope" id="scope"></div>
     </div>
     <div class="head-right">
-      <div class="clock" id="clock"></div>
       <div id="verdict"></div>
+      <!--
+        Trước đây chỗ này là đồng hồ chạy từng giây. Nó nhấp nháy ngay cạnh badge
+        phán quyết — thứ quan trọng nhất trên trang — mà chuyển động thì luôn
+        thắng màu sắc ở tầm nhìn ngoại vi. Câu cần trả lời cũng không phải "mấy
+        giờ rồi" (hệ điều hành đã nói) mà "số tôi đang nhìn cũ bao lâu rồi".
+      -->
+      <div class="stamp" id="stamp"><span class="live"></span>đang tải…</div>
     </div>
   </header>
 
-  <!-- Tầng 1: dải canh gác -->
-  <section class="statusbar card" id="watchdog"></section>
+  <!-- ══ Bộ lọc TOÀN CỤC ═══════════════════════════════════════════════════
+       Dính lên đỉnh màn hình. Không phải để trang trí: đổi bộ lọc trong lúc
+       đang nhìn kết quả là thao tác chính của trang này, mà thanh lọc trôi mất
+       khi cuộn thì mỗi lần đổi là cuộn lên, bấm, cuộn xuống, và tới lúc nhìn
+       lại thì đã quên số cũ.
 
-  <!-- Bảng canary nằm NGAY DƯỚI ô Canary của dải canh gác và mặc định đóng.
-       Trước đây nó là một khu riêng ở giữa trang: 12 dòng "đạt" nằm chình ình
-       trên đường đi mỗi lần cuộn, trong khi thứ cần biết hằng ngày chỉ là con
-       số "0 lỗi" đã có sẵn ở dải trên. Mở ra khi muốn xem 12 cái đó là gì. -->
+       Ở đây CHỈ chứa thứ thật sự toàn cục: khoảng ngày, người, ứng dụng. Ô
+       "Nhóm theo / Đo bằng / Kiểu vẽ" nằm trong chính thẻ biểu đồ mà chúng điều
+       khiển — đưa lên đây là tái phạm đúng lỗi cũ theo chiều ngược lại: một
+       thanh trông như lọc cả trang nhưng có nút chỉ đổi được một khối. -->
+  <section class="filterbar" id="filterbar">
+    <div class="fb card">
+      <div class="fb-grp">
+        <span class="fb-lb">Khoảng</span>
+        <div class="seg" id="f-range"></div>
+        <div class="calwrap">
+          <button type="button" class="cal-btn" id="f-cal" aria-haspopup="dialog" aria-expanded="false">
+            <span class="cal-ic" aria-hidden="true">▦</span><span id="f-cal-text">Tuỳ chọn</span>
+          </button>
+          <div class="cal" id="cal" role="dialog" aria-label="Chọn khoảng ngày" hidden></div>
+        </div>
+      </div>
+
+      <div class="fb-grp">
+        <span class="fb-lb">Người</span>
+        <select id="f-user" class="mini" aria-label="Lọc theo người"></select>
+      </div>
+
+      <div class="fb-grp">
+        <span class="fb-lb">Ứng dụng</span>
+        <select id="f-app" class="mini" aria-label="Lọc theo ứng dụng"></select>
+      </div>
+
+      <span class="spacer"></span>
+      <button type="button" class="btn ghost" id="f-reset" hidden>Bỏ lọc</button>
+    </div>
+    <div class="fb-note" id="fb-note" hidden></div>
+  </section>
+
+  <!-- ══ Tầng 1: canh gác ══════════════════════════════════════════════════
+       NẰM NGOÀI bộ lọc, cố ý. "Canary cách đây 2 giờ" luôn tính từ bây giờ:
+       cho bộ lọc đụng vào thì chọn xem lại tuần trước sẽ ra "nhịp tim cách đây
+       9 ngày" và báo đỏ — một cảnh báo giả do chính người xem vừa tạo ra bằng
+       cách đổi khoảng ngày. Có một dòng chữ nói rõ điều đó ngay dưới. -->
+  <section class="statusbar card" id="watchdog"></section>
+  <div class="rt-note">Dải canh gác luôn tính theo thời gian thực — không đổi theo bộ lọc phía trên.</div>
+
   <section class="card pad" id="canary-box" hidden>
     <h2>Probe canary <span class="n" id="canary-n"></span></h2>
     <div class="scroll"><table id="t-canary"></table></div>
     <div id="canary-pager"></div>
   </section>
 
-  <!-- Tầng 2: KPI -->
+  <!-- ══ Tầng 2: KPI ═══════════════════════════════════════════════════════ -->
   <section class="g4" id="kpi"></section>
 
-  <!-- Tầng 3: xu hướng -->
-  <section class="g2">
-    <div class="card pad">
-      <h2>Lượt gọi theo ngày</h2>
-      <div id="c-daily"></div>
-    </div>
-    <div class="card pad">
-      <h2>
-        Tool <span class="n" id="tools-n"></span>
-        <span class="spacer"></span>
-        <span class="seg seg-sm" id="f-toolrank">
-          <button type="button" data-v="top">Nhiều nhất</button>
-          <button type="button" data-v="bottom">Ít nhất</button>
-        </span>
-      </h2>
-      <div id="c-tools"></div>
-    </div>
-  </section>
+  <!-- ══ Tầng 3: biểu đồ ═══════════════════════════════════════════════════
+       MỘT biểu đồ, không phải ba.
 
-  <!-- Tầng 4: sử dụng -->
-  <div class="zone">Sử dụng</div>
-
-  <!-- MỘT bảng người, ăn nguyên chiều ngang. Trước đây là hai bảng "Người
-       dùng" và "Chỗ cắm" đặt cạnh nhau — hai lát cắt của cùng một tập người,
-       bắt phải đối chiếu bằng mắt xem dòng nào là ai. -->
-  <section class="card pad">
-    <h2>Người dùng <span class="n" id="people-n"></span></h2>
-    <div class="scroll"><table class="wide" id="t-people"></table></div>
-    <div id="people-pager"></div>
-  </section>
-
-  <!-- Đào sâu: phần trước đây là trang /explore riêng -->
-  <div class="zone">Đào sâu</div>
-  <section class="card pad">
-    <div class="controls">
+       Trước đây trên đầu trang có "Lượt gọi theo ngày" và "Tool nhiều/ít nhất",
+       rồi cuối trang có khu "Đào sâu" vẽ lại đúng hai thứ đó qua ô chọn. Cùng
+       một câu hỏi, cùng một tập số, ba chỗ vẽ. Nay còn một chỗ, và nó mở sẵn ở
+       "Ngày × Lượt gọi" — tức là đúng cái biểu đồ vừa bị bỏ, nằm đúng chỗ mắt
+       tìm, chỉ khác là giờ đổi được góc nhìn mà không phải cuộn đi đâu. -->
+  <div class="zone">Phân tích</div>
+  <section class="card pad" id="chart-card">
+    <h2>
+      <span id="chart-title">Biểu đồ</span>
+      <span class="spacer"></span>
+      <span class="seg seg-sm" id="f-kind"></span>
+    </h2>
+    <div class="cc">
       <div class="field">
         <label for="f-dim">Nhóm theo</label>
         <select id="f-dim"></select>
@@ -72,26 +102,22 @@
         <label for="f-measure">Đo bằng</label>
         <select id="f-measure"></select>
       </div>
-      <div class="field">
-        <label for="f-user">Lọc người</label>
-        <select id="f-user"></select>
-      </div>
-      <div class="field">
-        <label>Khoảng</label>
-        <div class="seg" id="f-days"></div>
-      </div>
-      <div class="field">
-        <label>Kiểu vẽ</label>
-        <div class="seg" id="f-kind"></div>
-      </div>
     </div>
+    <div class="summary" id="summary"></div>
+    <div class="legend" id="legend"></div>
+    <div id="chart"></div>
   </section>
 
+  <!-- ══ Tầng 4: chi tiết ══════════════════════════════════════════════════
+       Bảng người GIỮ LẠI dù biểu đồ có thể nhóm theo "Người gọi": hai cột
+       "Cắm bằng" và "Token còn" đến từ bảng `machines`, không nằm trong
+       audit_logs nên không có phép gộp nào dựng lại được chúng. Riêng "Token
+       còn" là con số DUY NHẤT trên trang đòi hành động TRƯỚC khi hỏng. -->
+  <div class="zone">Chi tiết</div>
   <section class="card pad">
-    <h2 id="chart-title">Biểu đồ</h2>
-    <div class="summary" id="summary"></div>
-    <div class="legend" id="legend" style="margin-top:12px"></div>
-    <div id="chart"></div>
+    <h2>Người dùng <span class="n" id="people-n"></span></h2>
+    <div class="scroll"><table class="wide" id="t-people"></table></div>
+    <div id="people-pager"></div>
   </section>
 
   <section class="card pad">
@@ -122,10 +148,21 @@
   });
 
   const BAKED = /*__DATA__*/null;
-  // Danh mục cột/phép đo của phần "Đào sâu", build.mjs nướng vào từ
-  // explore-schema.mjs — trang KHÔNG tự khai lại, nếu không nó sẽ chào một
-  // lựa chọn mà máy chủ từ chối.
+  // Danh mục cột/phép đo/mốc sẵn, build.mjs nướng vào từ explore-schema.mjs +
+  // range.mjs — trang KHÔNG tự khai lại, nếu không nó sẽ chào một lựa chọn mà
+  // máy chủ từ chối.
   const SCHEMA = /*__SCHEMA__*/null;
+  // Bản xem trước tĩnh: số của khu biểu đồ nướng sẵn theo TỪNG cột nhóm, để mở
+  // preview.html không cần backend vẫn đổi được "Nhóm theo". Bản live = null.
+  const BAKED_EX = /*__EXPLORE__*/null;
+  /**
+   * Bản xem trước tĩnh (mở preview.html, không backend) hay bản chạy thật?
+   *
+   * Ranh giới này quyết định thứ trang được phép hứa. Bản tĩnh nướng số cho
+   * ĐÚNG một khoảng, nên bộ lọc toàn cục không có gì để lọc sang — và cách
+   * đúng là KHOÁ nó lại, không phải để bấm được rồi âm thầm bật về chỗ cũ.
+   */
+  const STATIC = Boolean(BAKED);
 
   const $ = (id) => document.getElementById(id);
   const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -142,6 +179,28 @@
     if (h < 48) return h.toFixed(1).replace('.0', '') + ' giờ trước';
     return Math.round(h / 24) + ' ngày trước';
   };
+  const cut = (s, n) => (String(s).length > n ? String(s).slice(0, n - 1) + '…' : String(s));
+
+  /**
+   * ── Ngày, theo giờ Việt Nam ──────────────────────────────────────────────
+   *
+   * Ba dòng số học ngày tháng, cố ý viết lại ở đây thay vì gọi range.mjs: file
+   * đó là mô-đun phía máy chủ, còn trang này là một file HTML rời phải mở được
+   * cả khi không có backend.
+   *
+   * Trùng lặp có kiểm soát, vì QUYỀN QUYẾT ĐỊNH không nằm ở đây: trang chỉ ĐỀ
+   * NGHỊ một khoảng, máy chủ kẹp biên rồi trả về `range` thật, và trang hiện
+   * lại đúng cái nó nhận được. Lệch nhau thì máy chủ đúng.
+   */
+  const TZ_MS = SCHEMA.TZ_MIN * 60000, DAY_MS = 86400000;
+  const today = () => new Date(Date.now() + TZ_MS).toISOString().slice(0, 10);
+  const addDays = (d, n) => new Date(Date.parse(d + 'T00:00:00Z') + n * DAY_MS).toISOString().slice(0, 10);
+  const spanDays = (a, b) => Math.round((Date.parse(b + 'T00:00:00Z') - Date.parse(a + 'T00:00:00Z')) / DAY_MS) + 1;
+  const presetRange = (key) => {
+    const p = SCHEMA.PRESETS.find((x) => x.key === key) || SCHEMA.PRESETS[2];
+    const to = today();
+    return { from: addDays(to, -(p.days - 1)), to };
+  };
 
   const tip = $('tip');
   function bindTip(el, html) {
@@ -157,9 +216,53 @@
     el.addEventListener('mouseleave', hide); el.addEventListener('focus', show); el.addEventListener('blur', hide);
   }
 
-  let LAST = null;         // dữ liệu lần render gần nhất — để vẽ lại mà khỏi gọi mạng
-  let toolRank = 'top';    // 'top' | 'bottom' — giữ ngoài render, xem canaryOpen
-  let canaryOpen = false;  // bảng probe đang mở? giữ qua mỗi lần poll 30s
+  /**
+   * ── Trạng thái ───────────────────────────────────────────────────────────
+   *
+   * `FILTER` là bộ lọc TOÀN CỤC — nó đi vào cả hai endpoint.
+   * `VIEW` chỉ đổi cách vẽ MỘT thẻ biểu đồ, không ai khác quan tâm.
+   *
+   * Tách hai cái ra không phải cho gọn code mà vì chúng có chi phí khác nhau:
+   * đổi FILTER là đi mạng hai lần, đổi VIEW là vẽ lại tại chỗ, tức thì. Trộn
+   * chung thì sớm muộn một thao tác đáng lẽ tức thì lại chờ một giây.
+   */
+  const DEF_FILTER = { preset: SCHEMA.DEFAULT_PRESET, from: '', to: '', user: '', app: '' };
+  const DEF_VIEW = { dim: 'day', measure: 'calls', kind: '' };
+  const FILTER = { ...DEF_FILTER };
+  const VIEW = { ...DEF_VIEW };
+
+  let DATA = null;          // kết quả /api/data gần nhất
+  let EX = null;            // kết quả /api/explore gần nhất
+  let toolRank = 'top';     // giữ NGOÀI render, xem canaryOpen
+  let canaryOpen = false;   // bảng probe đang mở? giữ qua mỗi lần poll 30s
+
+  (function readUrl() {
+    const q = new URLSearchParams(location.search);
+    for (const k of Object.keys(DEF_FILTER)) if (q.get(k)) FILTER[k] = q.get(k);
+    for (const k of Object.keys(DEF_VIEW)) if (q.get(k)) VIEW[k] = q.get(k);
+    // from/to và preset loại trừ nhau: có cặp ngày tay thì bỏ mốc sẵn, không
+    // thì máy chủ ưu tiên preset và cặp ngày trên URL thành chữ chết.
+    if (FILTER.from && FILTER.to) FILTER.preset = '';
+    else { FILTER.from = ''; FILTER.to = ''; if (!FILTER.preset) FILTER.preset = DEF_FILTER.preset; }
+  })();
+
+  function pushUrl() {
+    const q = new URLSearchParams();
+    const put = (o, d) => { for (const [k, v] of Object.entries(o)) if (v && v !== d[k]) q.set(k, v); };
+    put(FILTER, DEF_FILTER); put(VIEW, DEF_VIEW);
+    const s = q.toString();
+    history.replaceState(null, '', s ? '?' + s : location.pathname);
+  }
+
+  /** Bộ lọc → query string chung cho CẢ hai endpoint. Một nguồn, không lệch. */
+  function filterQuery() {
+    const q = new URLSearchParams();
+    if (FILTER.preset) q.set('preset', FILTER.preset);
+    else { q.set('from', FILTER.from); q.set('to', FILTER.to); }
+    if (FILTER.user) q.set('user', FILTER.user);
+    if (FILTER.app) q.set('app', FILTER.app);
+    return q;
+  }
 
   /**
    * ── Phân trang ────────────────────────────────────────────────────────
@@ -201,15 +304,271 @@
    * phải "tốt", nó là "chạy được"; đỏ không phải "lỗi", nó là "người dùng
    * không dùng được" — hai chữ đó khác nhau và bảng này chỉ đếm chữ thứ hai.
    */
-  const LEGEND = (show) => (show
+  const LEGEND2 = (show) => (show
     ? '<div class="legend"><span><i style="background:var(--good)"></i>Chạy được</span>' +
       '<span><i style="background:var(--critical)"></i>Không dùng được</span></div>'
     : '');
 
-  function render(DATA) {
-  LAST = DATA;
+  // ══════════════════════════════════════════════════════════════════════════
+  // BỘ LỌC TOÀN CỤC
+  // ══════════════════════════════════════════════════════════════════════════
+
+  /** Khoảng mà trang ĐANG ĐỀ NGHỊ, tính ngay tại chỗ, không chờ mạng. */
+  const wantedRange = () => (FILTER.preset
+    ? { ...presetRange(FILTER.preset), preset: FILTER.preset }
+    : { from: FILTER.from, to: FILTER.to, preset: null });
+
+  /**
+   * Khoảng đang áp dụng.
+   *
+   * Lấy lời máy chủ CHỈ KHI nó đang nói về đúng bộ lọc hiện tại — nó mang theo
+   * ghi chú kẹp biên nên đáng tin hơn. Chưa khớp nghĩa là câu trả lời còn trên
+   * đường về, và trong lúc đó phải hiện khoảng VỪA CHỌN chứ không phải khoảng
+   * của lần trước: bấm "3 ngày" mà nhãn còn ghi "30 ngày" thì thao tác trông
+   * như đã trượt, và người ta bấm lại lần nữa.
+   */
+  function activeRange() {
+    const w = wantedRange();
+    const d = DATA && DATA.range;
+    if (d && (d.preset || null) === w.preset && (w.preset || (d.from === w.from && d.to === w.to))) return d;
+    return { ...w, days: w.from && w.to ? spanDays(w.from, w.to) : 0, clamped: [] };
+  }
+
+  const rangeText = (r) => {
+    if (!r || !r.from) return '—';
+    const d = spanDays(r.from, r.to);
+    if (d === 1) return day2(r.from);
+    return `${day2(r.from)} – ${day2(r.to)}`;
+  };
+
+  function buildFilterBar() {
+    $('f-range').innerHTML = SCHEMA.PRESETS
+      .map((p) => `<button type="button" data-v="${esc(p.key)}">${esc(p.label)}</button>`).join('');
+
+    $('f-range').addEventListener('click', (e) => {
+      const b = e.target.closest('button');
+      if (!b) return;
+      closeCal();
+      Object.assign(FILTER, { preset: b.dataset.v, from: '', to: '' });
+      applyFilter();
+    });
+    $('f-user').addEventListener('change', (e) => { FILTER.user = e.target.value; applyFilter(); });
+    $('f-app').addEventListener('change', (e) => { FILTER.app = e.target.value; applyFilter(); });
+    $('f-reset').addEventListener('click', () => { Object.assign(FILTER, DEF_FILTER); applyFilter(); });
+    $('f-cal').addEventListener('click', () => (calOpen ? closeCal() : openCal()));
+
+    // Bấm ra ngoài / bấm Esc là đóng lịch. Thiếu hai cái này thì một popover
+    // mở ra là nó nằm lì trên màn cho tới khi bấm trúng đúng cái nút đã mở nó.
+    document.addEventListener('click', (e) => {
+      if (calOpen && !e.target.closest('.calwrap')) closeCal();
+    });
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && calOpen) closeCal(); });
+
+    /**
+     * Viền dưới thanh lọc CHỈ hiện khi nó đã dính lên đỉnh. Lúc trang chưa cuộn
+     * thì nó là một thẻ như mọi thẻ khác; kẻ sẵn một đường ngang ở đó là thêm
+     * một nét chia mà chưa có gì để chia.
+     *
+     * Một phép so `top <= 0` trong chính sự kiện cuộn, không IntersectionObserver
+     * và không requestAnimationFrame. Bản đầu dùng IO với một ô mốc 1px, bản
+     * thứ hai bọc rAF — cả hai đều là API chỉ chạy khi trang ĐANG ĐƯỢC VẼ, nên
+     * mỗi lần thêm một cái là thêm một đường để trạng thái này lệch khỏi sự
+     * thật, mà lệch thì không có lỗi nào báo: thanh vẫn dính, chỉ là mất đường
+     * phân tách và nội dung cuộn qua trông như dán đè lên nhau.
+     *
+     * Chỉ GHI khi giá trị đổi. Đọc getBoundingClientRect rồi đổi class ngay
+     * trong cùng một nhịp cuộn là công thức làm trình duyệt tính lại bố cục
+     * liên tục; ghi theo cạnh lên/xuống thì cả một lần cuộn dài chỉ có đúng hai
+     * lần ghi.
+     */
+    const bar = $('filterbar');
+    let isStuck = false;
+    const onScroll = () => {
+      const now = bar.getBoundingClientRect().top <= 0;
+      if (now !== isStuck) { isStuck = now; bar.classList.toggle('stuck', now); }
+    };
+    addEventListener('scroll', onScroll, { passive: true });
+    addEventListener('resize', onScroll, { passive: true });
+    onScroll();
+
+    if (STATIC) lockGlobalFilters();
+  }
+
+  /**
+   * Bản tĩnh: KHOÁ hẳn bộ lọc toàn cục.
+   *
+   * Bản đầu để nguyên cho bấm, rồi khi bấm xong thì lặng lẽ đặt bộ lọc về mốc
+   * đã nướng và ghi một dòng chú thích nhỏ. Đo thực tế: người dùng chọn ngày,
+   * thấy nó bật ngược lại, và kết luận là TÍNH NĂNG HỎNG — hoàn toàn hợp lý,
+   * vì một cái nút bấm được là một lời hứa. Nút khoá nói thật ngay từ đầu; nút
+   * tự bật lại thì bắt người ta phải tự đoán ra lý do.
+   *
+   * "Nhóm theo / Đo bằng / Kiểu vẽ" KHÔNG khoá: build nướng sẵn phép gộp cho
+   * từng cột nhóm nên chúng chạy được thật, kể cả offline.
+   */
+  function lockGlobalFilters() {
+    const why = 'Bản xem trước tĩnh — số đã nướng sẵn cho một khoảng. Chạy `npm run dashboard` để lọc thật.';
+    for (const el of [...$('f-range').children, $('f-cal'), $('f-user'), $('f-app')]) {
+      el.disabled = true;
+      el.title = why;
+    }
+    $('f-reset').hidden = true;
+  }
+
+  function syncFilterBar() {
+    const r = activeRange();
+    for (const b of $('f-range').children) b.setAttribute('aria-pressed', String(b.dataset.v === FILTER.preset));
+    $('f-cal').setAttribute('aria-pressed', String(!FILTER.preset));
+    $('f-cal-text').textContent = FILTER.preset ? 'Tuỳ chọn' : rangeText(r);
+    $('f-cal').classList.toggle('on', !FILTER.preset);
+
+    const f = (DATA && DATA.filters) || { users: [], apps: [], noApp: 0 };
+    const opts = (list, cur, all) => `<option value="">${all}</option>` +
+      list.map((v) => `<option value="${esc(v)}"${v === cur ? ' selected' : ''}>${esc(cut(v, 38))}</option>`).join('');
+    // Giá trị đang chọn mà không còn trong danh sách (đổi khoảng ngày là người
+    // không hoạt động biến mất) thì vẫn phải nằm trong ô — không thì ô hiện
+    // "Tất cả" trong khi số liệu vẫn đang lọc theo người đó.
+    const withCur = (list, cur) => (cur && !list.includes(cur) ? [cur, ...list] : list);
+    $('f-user').innerHTML = opts(withCur(f.users, FILTER.user), FILTER.user, 'Tất cả mọi người');
+    $('f-app').innerHTML = opts(withCur(f.apps, FILTER.app), FILTER.app, 'Tất cả ứng dụng');
+
+    const dirty = FILTER.user || FILTER.app || FILTER.preset !== DEF_FILTER.preset;
+    $('f-reset').hidden = !dirty || STATIC;
+
+    // Dòng ghi chú dưới thanh lọc: chỉ nói khi có gì BẤT NGỜ cần nói.
+    const notes = [];
+    if (STATIC) {
+      notes.push(`Bản xem trước tĩnh — số nướng sẵn cho ${rangeText(r)}, bộ lọc đã khoá.`
+        + ' Chạy `npm run dashboard` để có bản đầy đủ, lọc được theo ngày / người / ứng dụng.');
+    }
+    if (r && r.clamped && r.clamped.length) notes.push(...r.clamped);
+    if (FILTER.app && f.noApp) {
+      notes.push(`${nf(f.noApp)} lượt gọi ghi trước khi hệ thống bắt đầu lưu tên ứng dụng — không nằm trong bộ lọc này.`);
+    }
+    $('fb-note').innerHTML = notes.map((n) => `<span>⚠ ${esc(n)}</span>`).join('');
+    $('fb-note').hidden = !notes.length;
+
+    // Dòng phạm vi dưới tiêu đề trang.
+    const d = r && r.from ? spanDays(r.from, r.to) : 0;
+    $('scope').innerHTML = [
+      `<b>${esc(rangeText(r))}</b>`,
+      d ? `${nf(d)} ngày` : '',
+      FILTER.user ? `chỉ <b>${esc(cut(FILTER.user, 28))}</b>` : 'tất cả mọi người',
+      FILTER.app ? `qua <b>${esc(FILTER.app)}</b>` : '',
+    ].filter(Boolean).join(' · ');
+  }
+
+  // ── Lịch chọn khoảng ────────────────────────────────────────────────────
+  /**
+   * Lịch tự vẽ, không thư viện: CSP của Vercel chặn host ngoài, và bản
+   * preview.html phải mở được như một file rời không mạng.
+   *
+   * Nó ĐỨNG CẠNH các mốc sẵn chứ không thay chúng. "30 ngày" là một cú bấm;
+   * qua lịch là mở, định vị tháng, bấm hai đầu — bốn thao tác cho đúng thứ mà
+   * hầu hết lượt mở trang cần. Bỏ mốc sẵn là bắt cả tổ trả giá cho một nhu cầu
+   * thỉnh thoảng.
+   */
+  let calOpen = false, calCursor = '', calPick = null, calHover = '';
+  const DOW = ['T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'CN'];
+  const MONTH = (ym) => `Tháng ${+ym.slice(5, 7)}/${ym.slice(0, 4)}`;
+  const ymOf = (d) => d.slice(0, 7);
+  const ymAdd = (ym, n) => {
+    const m = (+ym.slice(5, 7)) - 1 + n, y = +ym.slice(0, 4) + Math.floor(m / 12);
+    return `${y}-${String(((m % 12) + 12) % 12 + 1).padStart(2, '0')}`;
+  };
+
+  const calMin = () => addDays(today(), -(SCHEMA.MAX_RANGE_DAYS - 1));
+
+  function openCal() {
+    const r = activeRange();
+    calPick = { from: r.from, to: r.to };
+    calHover = '';
+    // Mở ra ở tháng của ĐẦU CUỐI khoảng, và nó là tháng bên PHẢI — vì khoảng
+    // gần nhất luôn kết thúc ở hôm nay, mà mắt tìm hôm nay trước tiên.
+    calCursor = ymAdd(ymOf(r.to || today()), -1);
+    calOpen = true;
+    $('cal').hidden = false;
+    $('f-cal').setAttribute('aria-expanded', 'true');
+    drawCal();
+  }
+  function closeCal() {
+    calOpen = false;
+    $('cal').hidden = true;
+    $('f-cal').setAttribute('aria-expanded', 'false');
+  }
+
+  function monthHtml(ym) {
+    const first = ym + '-01';
+    // getUTCDay: CN = 0. Tuần bắt đầu THỨ HAI nên xoay về Mon = 0.
+    const lead = (new Date(first + 'T00:00:00Z').getUTCDay() + 6) % 7;
+    const days = new Date(Date.UTC(+ym.slice(0, 4), +ym.slice(5, 7), 0)).getUTCDate();
+    const min = calMin(), max = today();
+    const a = calPick.from, b = calPick.to || calHover || calPick.from;
+    const lo = a && b ? (a < b ? a : b) : a, hi = a && b ? (a < b ? b : a) : a;
+
+    let s = `<div class="cal-m"><div class="cal-mh">${esc(MONTH(ym))}</div><div class="cal-g">`;
+    s += DOW.map((d) => `<span class="cal-dow">${d}</span>`).join('');
+    for (let i = 0; i < lead; i++) s += '<span></span>';
+    for (let d = 1; d <= days; d++) {
+      const iso = `${ym}-${String(d).padStart(2, '0')}`;
+      const off = iso > max || iso < min;
+      const inR = !off && lo && hi && iso >= lo && iso <= hi;
+      const edge = iso === lo ? ' e0' : iso === hi ? ' e1' : '';
+      s += `<button type="button" class="cal-d${inR ? ' in' : ''}${edge}${iso === max ? ' now' : ''}"`
+        + `${off ? ' disabled' : ''} data-d="${iso}">${d}</button>`;
+    }
+    return s + '</div></div>';
+  }
+
+  function drawCal() {
+    const picking = calPick.from && !calPick.to;
+    $('cal').innerHTML =
+      `<div class="cal-nav">
+         <button type="button" class="btn ghost" data-mv="-1" aria-label="Tháng trước">←</button>
+         <span class="cal-hint">${picking ? 'Chọn ngày kết thúc' : 'Chọn ngày bắt đầu'}</span>
+         <button type="button" class="btn ghost" data-mv="1" aria-label="Tháng sau"${ymAdd(calCursor, 1) >= ymOf(today()) ? ' disabled' : ''}>→</button>
+       </div>
+       <div class="cal-ms">${monthHtml(calCursor)}${monthHtml(ymAdd(calCursor, 1))}</div>
+       <div class="cal-ft">
+         <span class="dim">Tối đa ${SCHEMA.MAX_RANGE_DAYS} ngày</span>
+         <span class="spacer"></span>
+         <button type="button" class="btn" data-cancel>Huỷ</button>
+       </div>`;
+
+    $('cal').querySelectorAll('[data-mv]').forEach((b) => b.addEventListener('click', () => {
+      calCursor = ymAdd(calCursor, +b.dataset.mv); drawCal();
+    }));
+    $('cal').querySelector('[data-cancel]').addEventListener('click', closeCal);
+
+    $('cal').querySelectorAll('.cal-d').forEach((b) => {
+      b.addEventListener('mouseenter', () => {
+        // Tô sẵn khoảng khi rê chuột, chỉ trong lúc đang chọn đầu thứ hai —
+        // không thì không nhìn ra mình sắp chọn tới đâu cho tới khi đã bấm.
+        if (calPick.from && !calPick.to) { calHover = b.dataset.d; drawCal(); }
+      });
+      b.addEventListener('click', () => {
+        const d = b.dataset.d;
+        if (!calPick.from || calPick.to) { calPick = { from: d, to: '' }; calHover = ''; drawCal(); return; }
+        let from = calPick.from, to = d;
+        if (from > to) { const t = from; from = to; to = t; }
+        // Kẹp ngay tại chỗ để người chọn thấy hậu quả liền, thay vì bấm xong
+        // mới nhận về một khoảng bị máy chủ cắt ngắn không báo trước.
+        if (spanDays(from, to) > SCHEMA.MAX_RANGE_DAYS) from = addDays(to, -(SCHEMA.MAX_RANGE_DAYS - 1));
+        Object.assign(FILTER, { preset: '', from, to });
+        closeCal();
+        applyFilter();
+      });
+    });
+  }
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // TẦNG TRÊN: canh gác · KPI · bảng người
+  // ══════════════════════════════════════════════════════════════════════════
+
+  function renderTop() {
+  const D = DATA;
   // ── canh gác + phán quyết tổng ───────────────────────────────────────
-  const w = DATA.watchdog;
+  const w = D.watchdog;
   const cAge = ageH(w.canary && w.canary.at), iAge = ageH(w.ingest && w.ingest.at);
   const ICON = { good: '●', warning: '▲', serious: '▲', critical: '■' };
   const RANK = { good: 0, warning: 1, serious: 2, critical: 3 };
@@ -233,7 +592,7 @@
   ];
 
   $('watchdog').innerHTML = watches.map((c) => {
-    const mo = c.key === 'canary' && (DATA.canaryProbes || []).length;
+    const mo = c.key === 'canary' && (D.canaryProbes || []).length;
     return `<div class="item sev-x${mo ? ' js-canary' : ''}" style="--sev: var(--${c.sev})"${mo ? ' role="button" tabindex="0" title="Bấm để xem từng probe"' : ''}>
       <div class="ic" aria-hidden="true">${ICON[c.sev]}</div>
       <div><div class="k">${esc(c.k)}${mo ? '<span class="more">xem probe ▾</span>' : ''}</div>
@@ -250,143 +609,34 @@
       <span class="dot"></span>${VERDICT[worst][1]}</span>`;
 
   // ── KPI ──────────────────────────────────────────────────────────────
-  const k = DATA.kpi;
+  const k = D.kpi;
   // Chỉ đếm lượt CHẶN người dùng — lúc model phải nói "không dùng được tool
   // này". Thiếu quyền, sai tham số, quá hạn mức đều là Lark đã trả lời và model
   // đi tiếp được, đưa lên đây thì bảng lúc nào cũng đỏ trong khi tool chạy mượt.
   const blockSev = k.blockRate >= 5 ? 'critical' : k.blocked ? 'warning' : 'good';
+  const nd = D.daily.length;
   $('kpi').innerHTML = [
-    { hero: 1, k: 'Lượt gọi', v: nf(k.calls), d: `${DATA.daily.length} ngày có dữ liệu` },
+    // Mọi con số dưới đây là CỦA KHOẢNG ĐANG LỌC, không phải "từ trước tới
+    // giờ". Ghi rõ số ngày có dữ liệu ngay dưới ô hero: hai người mở hai màn
+    // hình với hai bộ lọc khác nhau sẽ cãi nhau về cùng một con số nếu không có
+    // dòng này.
+    { hero: 1, k: 'Lượt gọi', v: nf(k.calls), d: nd ? `${nd} / ${D.range.days} ngày có dữ liệu` : 'không có ngày nào có dữ liệu' },
     { k: 'Không dùng được', v: nf(k.blocked), sev: blockSev,
       d: k.blocked ? `${String(k.blockRate).replace('.', ',')}% lượt gọi bị chặn` : 'Không lượt nào bị chặn' },
     // "Đã cắm" là số người ĐĂNG NHẬP được, "đã gọi" là số người thật sự dùng.
     // Chênh lệch giữa hai số là thứ cần biết khi vừa phát link cho phòng ban.
     { k: 'Người đã cắm', v: nf(k.connected ?? k.users), d: `${nf(k.users)} người đã gọi tool` },
     { k: 'Độ trễ p95', v: ms(k.p95), d: 'trung vị ' + ms(k.p50) },
-    { k: 'Tool đã dùng', v: `${k.toolsUsed}<small>/${k.toolsTotal}</small>`, d: `${DATA.unused.length} chưa ai gọi` },
+    { k: 'Tool đã dùng', v: `${k.toolsUsed}<small>/${k.toolsTotal}</small>`, d: `${D.unused.length} chưa ai gọi` },
   ].map((t) => `<div class="card kpi${t.hero ? ' hero' : ''}">
       <div class="k">${esc(t.k)}</div>
       <div class="v num"${t.sev ? ` style="color: var(--${t.sev})"` : ''}>${t.v}</div>
       <div class="d">${esc(t.d)}</div></div>`).join('');
 
-  // ── cột: lượt gọi theo ngày ─────────────────────────────────────────
-  (function () {
-    const d = DATA.daily;
-    if (!d.length) { $('c-daily').innerHTML = '<div class="ok-empty dim">Chưa có dữ liệu theo ngày.</div>'; return; }
-    // Ít ngày thì đừng kéo giãn hết chiều ngang — cột dày vừa phải, canh trái,
-    // tránh cảnh 3 cột lọt thỏm giữa khoảng trắng mênh mông.
-    // Ít ngày thì cột DÀY hẳn ra thay vì để nửa thẻ trống. Bản trước chốt bề
-    // rộng cột ở 58px nên 5 ngày dữ liệu vẽ xong còn thừa hơn nửa chiều ngang.
-    const band = d.length < 10 ? Math.min(150, 900 / d.length) : (900 - 52) / d.length;
-    const W = Math.max(300, 52 + band * d.length + 10), H = 300, PL = 48, PR = 10, PT = 22, PB = 30;
-    const max = Math.max(1, ...d.map((x) => x.calls));
-    const step = Math.max(1, Math.pow(10, Math.floor(Math.log10(max))) / 2);
-    const top = Math.ceil(max / step) * step;
-    const bw = Math.min(74, band * 0.56);
-    const y = (v) => PT + (H - PT - PB) * (1 - v / top);
-    const cx = (i) => PL + band * (i + 0.5);
-
-    let s = '';
-    for (let t = 0; t <= top; t += step) {
-      s += `<line x1="${PL}" x2="${W - PR}" y1="${y(t)}" y2="${y(t)}" stroke="var(--grid)" stroke-width="1"/>`;
-      s += `<text x="${PL - 7}" y="${y(t) + 4}" text-anchor="end" font-size="12.5" fill="var(--ink-3)" class="num">${nf(t)}</text>`;
-    }
-    s += `<line x1="${PL}" x2="${W - PR}" y1="${y(0)}" y2="${y(0)}" stroke="var(--rule)" stroke-width="1"/>`;
-
-    /** Khối bo góc trên, đáy vuông để neo vào trục (hoặc vào khối bên dưới). */
-    const block = (x0, yT, h, color) => h <= 0 ? '' :
-      `<rect x="${x0}" y="${yT}" width="${bw}" height="${Math.max(2, h)}" rx="4" fill="${color}"/>` +
-      `<rect x="${x0}" y="${yT + Math.max(0, Math.max(2, h) - 4)}" width="${bw}" height="4" fill="${color}"/>`;
-
-    d.forEach((x, i) => {
-      // Cột CHỒNG: chạy được xanh ở dưới, bị chặn đỏ ở trên. Một cột đơn sắc
-      // chỉ nói được "hôm đó bận hay rảnh"; chồng lên thì nó nói luôn "hôm đó
-      // có ai không dùng được không" — mà đó mới là câu đang hỏi.
-      const x0 = cx(i) - bw / 2, okN = x.calls - x.blocked;
-      s += block(x0, y(okN), y(0) - y(okN), 'var(--good)');
-      s += block(x0, y(x.calls), y(okN) - y(x.calls), 'var(--critical)');
-      // Vùng bắt chuột phủ cả cột — bắt theo từng khối thì tooltip nhấp nháy
-      // mỗi lần con trỏ đi qua ranh giới xanh/đỏ.
-      s += `<rect class="sg" x="${x0}" y="${y(x.calls)}" width="${bw}" height="${Math.max(2, y(0) - y(x.calls))}" fill="transparent" data-i="${i}"/>`;
-      s += `<text x="${cx(i)}" y="${y(x.calls) - 5}" text-anchor="middle" font-size="13.5" font-weight="660" fill="var(--ink-2)" class="num">${nf(x.calls)}</text>`;
-      s += `<text x="${cx(i)}" y="${H - 9}" text-anchor="middle" font-size="12.5" fill="var(--ink-3)" class="num">${day2(x.day)}</text>`;
-    });
-    // Chú giải chỉ hiện khi thật sự có màu thứ hai trên biểu đồ. Không ngày nào
-    // bị chặn thì hai ô màu chỉ tổ làm người đọc đi tìm phần đỏ không tồn tại.
-    $('c-daily').innerHTML = LEGEND(d.some((x) => x.blocked)) +
-      `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMinYMid meet" role="img" aria-label="Lượt gọi theo ngày" style="max-width:${W}px">${s}</svg>`;
-    $('c-daily').querySelectorAll('.sg').forEach((el) => {
-      const x = d[+el.dataset.i];
-      bindTip(el, `<b>${day2(x.day)}</b><br>${nf(x.calls)} lượt gọi` +
-        (x.blocked ? `<br>${nf(x.blocked)} không dùng được` : ''));
-    });
-  })();
-
-  // ── thanh ngang: tool nhiều / ít nhất ────────────────────────────────
-  const drawTools = () => {
-    /**
-     * `DATA.tools` giờ gồm CẢ tool chưa ai gọi (calls = 0) — thẻ "Tool chưa ai
-     * gọi" cũ đã bỏ. Nhánh "Ít nhất" tự trả lời luôn câu đó, mà không bắt người
-     * đọc nhảy sang một danh sách nhãn riêng ở nửa dưới trang.
-     *
-     * Đồng hạng thì xếp theo tên: 22 tool cùng 0 lượt mà để thứ tự tuỳ ý thì
-     * mỗi lần poll 30s danh sách lại xáo, đọc dở dang là mất chỗ.
-     */
-    const src = DATA.tools.slice().sort((a, b) => (toolRank === 'top'
-      ? b.calls - a.calls || a.name.localeCompare(b.name)
-      : a.calls - b.calls || a.name.localeCompare(b.name)));
-    const t = src.slice(0, 10);
-    $('tools-n').textContent = `· ${nf(DATA.kpi.toolsUsed)}/${nf(DATA.kpi.toolsTotal)} đã dùng`;
-    for (const b of $('f-toolrank').children) b.setAttribute('aria-pressed', String(b.dataset.v === toolRank));
-
-    if (!t.length) { $('c-tools').innerHTML = '<div class="ok-empty dim">Chưa có tool nào.</div>'; return; }
-    const W = 520, rowH = 25, LW = 172, PR = 46, H = t.length * rowH + 4;
-    const max = Math.max(1, ...t.map((x) => x.calls));
-    const track = W - LW - PR;
-    let s = '';
-    t.forEach((x, i) => {
-      const yy = i * rowH + 4;
-      // 0 lượt thì KHÔNG vẽ thanh tối thiểu 2px — một vạch mờ trông y hệt "có
-      // gọi một tí", mà sự thật là chưa ai gọi. Để trống và ghi chữ.
-      if (!x.calls) {
-        s += `<text x="0" y="${yy + 12}" font-size="12.5" fill="var(--ink-3)" class="mono">${esc(x.name)}</text>`;
-        s += `<line x1="${LW}" x2="${LW + track}" y1="${yy + 8}" y2="${yy + 8}" stroke="var(--grid)" stroke-width="2"/>`;
-        s += `<text x="${LW + track + 7}" y="${yy + 12}" font-size="11" fill="var(--ink-3)">chưa gọi</text>`;
-        return;
-      }
-      const bw = Math.max(2, (x.calls / max) * track);
-      // Cùng luật với cột theo ngày: phần xanh là lượt chạy được, phần đỏ nối
-      // đuôi là lượt người dùng không dùng được. Tool đang hỏng thật lộ ra ngay
-      // ở đây; tool chỉ bị Lark từ chối vì thiếu quyền thì vẫn xanh nguyên.
-      const ew = x.blocked ? Math.max(2, (x.blocked / max) * track) : 0;
-      const ok = Math.max(0, bw - ew);
-      s += `<text x="0" y="${yy + 12}" font-size="12.5" fill="var(--ink-2)" class="mono">${esc(x.name)}</text>`;
-      s += `<rect x="${LW}" y="${yy + 2}" width="${bw}" height="12" rx="4" fill="var(--critical)"/>`;
-      s += ok > 0 ? `<rect x="${LW}" y="${yy + 2}" width="${ok}" height="12" rx="4" fill="var(--good)"/>` : '';
-      s += `<rect x="${LW}" y="${yy + 2}" width="${Math.min(bw, 4)}" height="12" fill="var(--${ok > 0 ? 'good' : 'critical'})"/>`;
-      s += `<rect class="br" x="${LW}" y="${yy + 2}" width="${bw}" height="12" fill="transparent" data-i="${i}"/>`;
-      s += `<text x="${LW + bw + 7}" y="${yy + 12}" font-size="11" font-weight="600" fill="var(--ink-2)" class="num">${nf(x.calls)}</text>`;
-    });
-    $('c-tools').innerHTML = LEGEND(t.some((x) => x.blocked)) +
-      `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Tool theo lượt gọi">${s}</svg>`;
-    $('c-tools').querySelectorAll('.br').forEach((el) => {
-      const x = t[+el.dataset.i];
-      bindTip(el, `<b>${esc(x.name)}</b><br>${nf(x.calls)} lượt · p95 ${ms(x.p95)}` +
-        (x.blocked ? `<br>${nf(x.blocked)} không dùng được (${String(x.blockRate).replace('.', ',')}%)` : ''));
-    });
-  };
-  drawTools();
-  $('f-toolrank').onclick = (e) => {
-    const b = e.target.closest('button');
-    if (b) { toolRank = b.dataset.v; drawTools(); }
-  };
-
-  const count = (id, n) => { if ($(id)) $(id).textContent = n ? `· ${nf(n)}` : ''; };
-
   // ── người dùng ───────────────────────────────────────────────────────
   // Cột "Không dùng được" CHỈ hiện khi có người thật sự bị chặn. Một cột toàn
   // số 0 không nói gì mà vẫn bắt mắt dừng lại đọc — đúng thứ cần bỏ.
-  const anyBlocked = DATA.people.some((p) => p.blocked);
+  const anyBlocked = D.people.some((p) => p.blocked);
   const SEV_STATUS = { active: 'good', revoked: 'critical', inactive: 'warning' };
 
   /**
@@ -420,25 +670,25 @@
     </tr>`;
 
   const drawPeople = () => {
-    const { from } = pageOf('people', DATA.people.length);
-    count('people-n', DATA.people.length);
-    $('t-people').innerHTML =
-      '<thead><tr><th>Người</th><th>Cắm bằng</th><th class="r">Lượt</th>' +
-      (anyBlocked ? '<th class="r nw">Không dùng được</th>' : '') +
-      '<th class="r">Tool</th><th class="r nw">Token còn</th><th class="r nw">Gần nhất</th></tr></thead><tbody>' +
-      DATA.people.slice(from, from + PAGE_SIZE).map(personRow).join('') + '</tbody>';
-    pager('people-pager', 'people', DATA.people.length, drawPeople);
+    const { from } = pageOf('people', D.people.length);
+    $('people-n').textContent = D.people.length ? `· ${nf(D.people.length)}` : '';
+    $('t-people').innerHTML = !D.people.length
+      ? '<tbody><tr><td class="dim">Không có ai khớp bộ lọc này.</td></tr></tbody>'
+      : '<thead><tr><th>Người</th><th>Cắm bằng</th><th class="r">Lượt</th>' +
+        (anyBlocked ? '<th class="r nw">Không dùng được</th>' : '') +
+        '<th class="r">Tool</th><th class="r nw">Token còn</th><th class="r nw">Gần nhất</th></tr></thead><tbody>' +
+        D.people.slice(from, from + PAGE_SIZE).map(personRow).join('') + '</tbody>';
+    pager('people-pager', 'people', D.people.length, drawPeople);
   };
   drawPeople();
 
-
   // ── canary ───────────────────────────────────────────────────────────
-  const cp = DATA.canaryProbes || [];
+  const cp = D.canaryProbes || [];
   const drawCanary = () => {
     const { from } = pageOf('canary', cp.length);
-    count('canary-n', cp.length);
+    $('canary-n').textContent = cp.length ? `· ${nf(cp.length)}` : '';
     $('t-canary').innerHTML = !cp.length
-      ? ''
+      ? '<tbody><tr><td class="dim">Chưa có chi tiết probe — chờ nhịp tim canary kế tiếp.</td></tr></tbody>'
       : '<thead><tr><th>Tool</th><th>Kết quả</th><th class="r nw">Thời gian</th><th class="r nw">Mã lỗi</th></tr></thead><tbody>' +
         cp.slice(from, from + PAGE_SIZE).map((p) => `<tr>
           <td class="mono">${esc(p.name)}</td>
@@ -446,9 +696,6 @@
           <td class="r num dim nw">${ms(p.ms)}</td>
           <td class="r num nw${p.code ? '' : ' dim'}">${p.code ? esc(p.code) : '—'}</td>
         </tr>`).join('') + '</tbody>';
-    if (!cp.length) {
-      $('t-canary').innerHTML = '<tbody><tr><td class="dim">Chưa có chi tiết probe — chờ nhịp tim canary kế tiếp.</td></tr></tbody>';
-    }
     pager('canary-pager', 'canary', cp.length, drawCanary);
   };
   drawCanary();
@@ -458,7 +705,7 @@
   $('canary-box').hidden = !canaryOpen;
   const cbtn = $('watchdog').querySelector('.js-canary');
   if (cbtn) {
-    const toggle = () => { canaryOpen = !canaryOpen; render(LAST); };
+    const toggle = () => { canaryOpen = !canaryOpen; renderTop(); };
     cbtn.addEventListener('click', toggle);
     cbtn.addEventListener('keydown', (e) => {
       if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(); }
@@ -467,25 +714,11 @@
   }
   }
 
+  // ══════════════════════════════════════════════════════════════════════════
+  // BIỂU ĐỒ
+  // ══════════════════════════════════════════════════════════════════════════
 
-  /**
-   * ── Đào sâu ───────────────────────────────────────────────────────────
-   *
-   * Trước đây là trang /explore riêng. Gộp về đây vì hai trang cùng trả lời
-   * một câu hỏi trên cùng một tập dữ liệu, mà tách ra thì phải nhớ trang nào
-   * có gì và mọi con số phải đối chiếu bằng cách mở hai tab.
-   *
-   * Đóng gói trong một hàm riêng để không đụng tên với phần trên: nó có
-   * state, draw, EX của riêng nó. Dùng chung $, esc, nf, dt, ms,
-   * bindTip, pageOf, pager, PAGE_SIZE của trang.
-   *
-   * KHÔNG còn ô chọn nguồn: bảng này chỉ theo dõi MCP remote. Nguồn zip là
-   * client khác, ghi chung bảng audit nhưng không phải thứ trang này canh —
-   * để lẫn vào chỉ làm mọi con số phải kèm một câu hỏi "của bản nào?".
-   */
-  function initExplore() {
-  const cut = (s, n) => (String(s).length > n ? String(s).slice(0, n - 1) + '…' : String(s));
-  const DIMS = SCHEMA.DIMENSIONS, MEASURES = SCHEMA.MEASURES, WINDOWS = SCHEMA.WINDOWS;
+  const DIMS = SCHEMA.DIMENSIONS, MEASURES = SCHEMA.MEASURES;
   const dimOf = (k) => DIMS.find((d) => d.key === k) || DIMS[0];
 
   /**
@@ -495,7 +728,7 @@
    */
   const REDUNDANT = { user_name: 'users', tool_name: 'tools' };
   const measuresFor = (dimKey) => MEASURES.filter((m) => m.key !== REDUNDANT[dimKey]);
-  const measureOf = (k) => measuresFor(state.dim).find((m) => m.key === k) || MEASURES[0];
+  const measureOf = (k) => measuresFor(VIEW.dim).find((m) => m.key === k) || MEASURES[0];
 
   const KINDS = [
     { key: 'hbar', label: 'Thanh ngang' },
@@ -512,10 +745,6 @@
 
   /**
    * Màu của một cột = nhóm đó có CHẶN người dùng không, không phải màu trang trí.
-   *
-   * Trước đây mọi cột cùng một sắc chàm, nên biểu đồ "lượt gọi theo tool" chỉ
-   * trả lời được "cái nào nhiều" — muốn biết cái nào đang hỏng phải dò xuống
-   * bảng bên dưới.
    *
    * Tô theo lượt KHÔNG DÙNG ĐƯỢC, không theo lỗi thô: thiếu quyền và sai tham
    * số là Lark đã trả lời, model đi tiếp được và người dùng không thấy gì. Tô
@@ -542,77 +771,50 @@
     return { top: Math.ceil(max / step) * step, step };
   }
 
-  const DEFAULTS = { dim: 'tool_name', measure: 'calls', days: 30, kind: '', user: '' };
-  const state = { ...DEFAULTS };
-  (function readUrl() {
-    const q = new URLSearchParams(location.search);
-    for (const k of Object.keys(DEFAULTS)) if (q.get(k)) state[k] = q.get(k);
-    state.days = WINDOWS.includes(+state.days) ? +state.days : 30;
-  })();
-
   /** Chưa chọn kiểu thì đoán theo cột: trục thời gian vẽ đường, phân loại vẽ thanh. */
-  const kindNow = () => state.kind || (dimOf(state.dim).time ? 'line' : 'hbar');
+  const kindNow = () => VIEW.kind || (dimOf(VIEW.dim).time ? 'line' : 'hbar');
 
-  function pushUrl() {
-    const q = new URLSearchParams();
-    for (const [k, v] of Object.entries(state)) if (v && v !== DEFAULTS[k]) q.set(k, v);
-    const s = q.toString();
-    history.replaceState(null, '', s ? '?' + s : location.pathname);
-  }
-
-  // ── Thanh chọn ─────────────────────────────────────────────────────────
-  function buildControls() {
+  function buildChartControls() {
     $('f-dim').innerHTML = DIMS.map((d) => `<option value="${esc(d.key)}">${esc(d.label)}</option>`).join('');
-    $('f-days').innerHTML = WINDOWS.map((d) => `<button type="button" data-v="${d}">${d} ngày</button>`).join('');
     $('f-kind').innerHTML = KINDS.map((k) => `<button type="button" data-v="${esc(k.key)}">${esc(k.label)}</button>`).join('');
 
-
-    // Đổi cột / khoảng / nguồn → phải gọi lại máy chủ. Đổi phép đo / kiểu vẽ →
-    // cùng một tập số, chỉ vẽ lại. Tách hai nhóm để thao tác thứ hai tức thì.
-    const reload = (patch) => { Object.assign(state, patch); pushUrl(); load(); };
-    const redraw = (patch) => { Object.assign(state, patch); pushUrl(); draw(); };
-
-    $('f-dim').addEventListener('change', (e) => reload({ dim: e.target.value, kind: '' }));
-    $('f-user').addEventListener('change', (e) => reload({ user: e.target.value }));
-    $('f-days').addEventListener('click', (e) => { const b = e.target.closest('button'); if (b) reload({ days: +b.dataset.v }); });
-    $('f-measure').addEventListener('change', (e) => redraw({ measure: e.target.value }));
-    $('f-kind').addEventListener('click', (e) => { const b = e.target.closest('button'); if (b) redraw({ kind: b.dataset.v }); });
-
+    // Đổi cột nhóm → phải gọi lại máy chủ. Đổi phép đo / kiểu vẽ → cùng một tập
+    // số, chỉ vẽ lại. Tách hai nhóm để thao tác thứ hai tức thì.
+    // Đổi cột nhóm chỉ đụng khu biểu đồ, nên chỉ khu đó bận — không mờ cả trang.
+    $('f-dim').addEventListener('change', async (e) => {
+      VIEW.dim = e.target.value; VIEW.kind = ''; pushUrl();
+      $('chart-card').classList.add('one-busy');
+      try { await loadExplore(); } finally { $('chart-card').classList.remove('one-busy'); }
+    });
+    $('f-measure').addEventListener('change', (e) => { VIEW.measure = e.target.value; pushUrl(); drawChart(); });
+    $('f-kind').addEventListener('click', (e) => {
+      const b = e.target.closest('button');
+      if (b) { VIEW.kind = b.dataset.v; pushUrl(); drawChart(); }
+    });
     $('f-csv').addEventListener('click', downloadCsv);
   }
 
-  function syncControls() {
-    // Danh sách người do máy chủ trả về theo từng cửa sổ thời gian — đổi sang
-    // 7 ngày thì người không hoạt động trong 7 ngày đó phải biến mất khỏi ô chọn.
-    const us = (EX && EX.users) || [];
-    $('f-user').innerHTML = '<option value="">Tất cả</option>' +
-      us.map((u) => `<option value="${esc(u)}">${esc(cut(u, 40))}</option>`).join('');
-    $('f-user').value = us.includes(state.user) ? state.user : '';
-
+  function syncChartControls() {
     // Danh sách phép đo dựng lại theo cột đang nhóm, nên phải vẽ lại ô chọn
     // mỗi lần — không thì mục vừa bị loại vẫn nằm đó và chọn được.
-    const av = measuresFor(state.dim);
-    if (!av.some((m) => m.key === state.measure)) state.measure = 'calls';
+    const av = measuresFor(VIEW.dim);
+    if (!av.some((m) => m.key === VIEW.measure)) VIEW.measure = 'calls';
     $('f-measure').innerHTML = av.map((m) => `<option value="${esc(m.key)}">${esc(m.label)}</option>`).join('');
-    $('f-dim').value = state.dim;
-    $('f-measure').value = state.measure;
-    for (const b of $('f-days').children) b.setAttribute('aria-pressed', String(+b.dataset.v === state.days));
+    $('f-dim').value = VIEW.dim;
+    $('f-measure').value = VIEW.measure;
     for (const b of $('f-kind').children) b.setAttribute('aria-pressed', String(b.dataset.v === kindNow()));
   }
-
-  // ── Vẽ ─────────────────────────────────────────────────────────────────
-  let EX = null;
 
   // Trần số nhóm vẽ ra. 60 tool hay 40 người trên một biểu đồ là 40 nhãn không
   // đọc nổi; phần còn lại vẫn nằm đủ ở bảng bên dưới, và dòng tóm tắt nói rõ
   // đã cắt bao nhiêu — cắt âm thầm thì biểu đồ trông như đã bày hết.
   const MAX_BARS = 25;
 
-  function draw() {
+  function drawChart() {
     if (!EX) return;
-    syncControls();
+    syncChartControls();
 
-    const dim = dimOf(state.dim), me = measureOf(state.measure), kind = kindNow();
+    const dim = dimOf(VIEW.dim), me = measureOf(VIEW.measure), kind = kindNow();
     const val = (r) => r[me.key];
     // p50/p95 null nghĩa là không có mẫu thời gian nào — bỏ hẳn khỏi biểu đồ,
     // vẽ thành 0 sẽ đọc thành "nhanh tức thì".
@@ -624,27 +826,37 @@
     const shown = rows.slice(0, MAX_BARS);
     const cutN = rows.length - shown.length;
 
-    $('chart-title').textContent = `${me.label} theo ${dim.label.toLowerCase()}`
-      + (EX.user ? ` — chỉ ${cut(EX.user, 34)}` : '');
+    $('chart-title').textContent = `${me.label} theo ${dim.label.toLowerCase()}`;
     $('summary').innerHTML = [
       `<span>Nguồn dữ liệu <b>${nf(EX.total)}</b> lượt gọi</span>`,
       `<span>Gộp thành <b>${nf(EX.groups)}</b> nhóm</span>`,
-      `<span>Cửa sổ <b>${state.days}</b> ngày</span>`,
       EX.skipped ? `<span>Bỏ qua <b>${nf(EX.skipped)}</b> lượt chưa ghi cột này</span>` : '',
-      EX.user ? `<span>Đang lọc <b>1</b>/${nf(EX.users.length)} người</span>` : '',
       cutN > 0 ? `<span>Biểu đồ hiện <b>${nf(shown.length)}</b> nhóm lớn nhất, còn <b>${nf(cutN)}</b> ở bảng dưới</span>` : '',
     ].filter(Boolean).join('');
 
-    // Chú giải chỉ có nghĩa khi thật sự có nhiều màu trên biểu đồ — mọi nhóm
-    // đều sạch lỗi thì ba ô màu chỉ là nhiễu.
+    /**
+     * Với phép đo "Lượt gọi", cột vẽ CHỒNG: phần chạy được xanh, phần bị chặn
+     * đỏ nối tiếp. Đây chính là thứ hai biểu đồ cũ ở đầu trang làm được — gộp
+     * về một chỗ mà đánh rơi nó thì cái mới nghèo hơn cái nó vừa thay.
+     *
+     * Chỉ áp cho `calls`: chồng "p95" hay "tỉ lệ lỗi" lên nhau thì hai phần
+     * cộng lại không ra con số nào có nghĩa.
+     */
+    const stacked = me.key === 'calls' && shown.some((r) => r.blocked);
     const seen = [...new Set(shown.map(health))];
-    $('legend').innerHTML = seen.length < 2 ? '' :
-      HEALTH.filter((h) => seen.includes(h.sev))
-        .map((h) => `<span><i style="background: var(--${h.sev})"></i>${esc(h.label)}</span>`).join('');
+    $('legend').innerHTML = stacked
+      ? '<span><i style="background:var(--good)"></i>Chạy được</span>'
+        + '<span><i style="background:var(--critical)"></i>Không dùng được</span>'
+      // Chú giải chỉ có nghĩa khi thật sự có nhiều màu trên biểu đồ — mọi nhóm
+      // đều sạch lỗi thì ba ô màu chỉ là nhiễu.
+      : seen.length < 2 ? ''
+        : HEALTH.filter((h) => seen.includes(h.sev))
+          .map((h) => `<span><i style="background: var(--${h.sev})"></i>${esc(h.label)}</span>`).join('');
 
     $('chart').innerHTML = !shown.length
-      ? '<div class="ok-empty dim">Không có dữ liệu nào trong khoảng này.</div>'
-      : kind === 'hbar' ? hbar(shown, me) : kind === 'bar' ? vbar(shown, me) : line(shown, me);
+      ? emptyChart()
+      : kind === 'hbar' ? hbar(shown, me, stacked)
+        : kind === 'bar' ? vbar(shown, me, stacked) : line(shown, me);
 
     $('chart').querySelectorAll('[data-i]').forEach((el) => {
       const r = shown[+el.dataset.i];
@@ -656,8 +868,21 @@
     drawTable(rows, me, dim);
   }
 
+  /**
+   * Rỗng vì KHÔNG CÓ GÌ, hay rỗng vì lọc quá tay? Hai chuyện khác nhau, và câu
+   * thứ hai có cách sửa ngay tại chỗ. Một biểu đồ trống không chú thích thì
+   * đọc thành "hệ thống chết".
+   */
+  function emptyChart() {
+    const filtered = FILTER.user || FILTER.app;
+    return `<div class="empty">
+      <div class="empty-t">Không có lượt gọi nào trong khoảng này${filtered ? ' với bộ lọc đang bật' : ''}.</div>
+      ${filtered ? '<button class="btn" onclick="document.getElementById(\'f-reset\').click()">Bỏ lọc người / ứng dụng</button>' : ''}
+    </div>`;
+  }
+
   /** Thanh ngang — mặc định cho cột phân loại, vì tên người và tên tool đều dài. */
-  function hbar(rows, me) {
+  function hbar(rows, me, stacked) {
     const W = 1000, rowH = 30, LW = 268, PR = 92, H = rows.length * rowH + 6;
     const max = Math.max(...rows.map((r) => r[me.key]), 0);
     const track = W - LW - PR;
@@ -665,23 +890,36 @@
     rows.forEach((r, i) => {
       const y = i * rowH + 5;
       const w = max > 0 ? Math.max(2, (r[me.key] / max) * track) : 2;
-      s += `<text x="0" y="${y + 14}" font-size="13.5" fill="var(--ink-2)">${esc(cut(r.key, 34))}</text>`;
-      s += `<rect data-i="${i}" x="${LW}" y="${y + 3}" width="${w}" height="16" rx="5" fill="${fill(r)}"/>`;
-      s += `<rect x="${LW}" y="${y + 3}" width="${Math.min(w, 5)}" height="16" fill="${fill(r)}"/>`;
+      const bad = stacked && r.blocked ? Math.max(2, (r.blocked / max) * track) : 0;
+      const ok = Math.max(0, w - bad);
+      s += `<text x="0" y="${y + 14}" font-size="13.5" fill="var(--ink-2)"${dimOf(VIEW.dim).mono ? ' class="mono"' : ''}>${esc(cut(r.key, 34))}</text>`;
+      // Vẽ nền đỏ hết bề rộng rồi phủ phần xanh lên: hai hình chữ nhật bo góc
+      // đặt cạnh nhau sẽ hở một khe sáng ở chỗ nối.
+      s += `<rect x="${LW}" y="${y + 3}" width="${w}" height="16" rx="5" fill="${bad ? 'var(--critical)' : fill(r)}"/>`;
+      if (bad && ok > 0) {
+        s += `<rect x="${LW}" y="${y + 3}" width="${ok}" height="16" rx="5" fill="var(--good)"/>`;
+        s += `<rect x="${LW + Math.max(0, ok - 5)}" y="${y + 3}" width="5" height="16" fill="var(--good)"/>`;
+      }
+      s += `<rect x="${LW}" y="${y + 3}" width="${Math.min(w, 5)}" height="16" fill="${bad && ok <= 0 ? 'var(--critical)' : bad ? 'var(--good)' : fill(r)}"/>`;
+      s += `<rect data-i="${i}" x="${LW}" y="${y + 3}" width="${w}" height="16" fill="transparent"/>`;
       s += `<text x="${LW + w + 9}" y="${y + 15}" font-size="12.5" font-weight="600" fill="var(--ink-2)" class="num">${esc(fmt(r[me.key], me.fmt))}</text>`;
     });
     return `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(me.label)}">${s}</svg>`;
   }
 
   /** Cột dọc — hợp với ngày/giờ, ít nhóm. */
-  function vbar(rows, me) {
-    const H = 300, PL = 62, PR = 10, PT = 20, PB = 46;
-    const band = Math.max(34, Math.min(90, 900 / rows.length));
+  function vbar(rows, me, stacked) {
+    const H = 320, PL = 62, PR = 10, PT = 24, PB = 46;
+    // Ít nhóm thì cột DÀY hẳn ra thay vì để nửa thẻ trống — bản cũ chốt bề rộng
+    // nên 5 ngày dữ liệu vẽ xong còn thừa hơn nửa chiều ngang.
+    const band = rows.length < 10 ? Math.min(150, 900 / rows.length) : Math.max(30, Math.min(90, 940 / rows.length));
     const W = Math.max(360, PL + band * rows.length + PR);
     const { top, step } = scale(Math.max(...rows.map((r) => r[me.key]), 0));
     const y = (v) => PT + (H - PT - PB) * (1 - v / top);
     const cx = (i) => PL + band * (i + 0.5);
-    const bw = Math.min(38, band * 0.55);
+    const bw = Math.min(74, band * 0.56);
+    // Nhãn số trên đầu cột chỉ khi cột đủ thưa — 40 cột thì chúng đè lên nhau.
+    const showVal = rows.length <= 16;
 
     let s = '';
     for (let t = 0; t <= top + 1e-9; t += step) {
@@ -689,22 +927,39 @@
       s += `<text x="${PL - 9}" y="${y(t) + 4}" text-anchor="end" font-size="11" fill="var(--ink-3)" class="num">${esc(fmt(t, me.fmt))}</text>`;
     }
     s += `<line x1="${PL}" x2="${W - PR}" y1="${y(0)}" y2="${y(0)}" stroke="var(--rule)"/>`;
+
+    /** Khối bo góc trên, đáy vuông để neo vào trục (hoặc vào khối bên dưới). */
+    const block = (x0, yT, h, color) => (h <= 0 ? '' :
+      `<rect x="${x0}" y="${yT}" width="${bw}" height="${Math.max(2, h)}" rx="5" fill="${color}"/>` +
+      `<rect x="${x0}" y="${yT + Math.max(0, Math.max(2, h) - 5)}" width="${bw}" height="5" fill="${color}"/>`);
+
     rows.forEach((r, i) => {
-      const yT = y(r[me.key]), h = Math.max(2, y(0) - yT);
-      s += `<rect data-i="${i}" x="${cx(i) - bw / 2}" y="${yT}" width="${bw}" height="${h}" rx="5" fill="${fill(r)}"/>`;
-      s += `<rect x="${cx(i) - bw / 2}" y="${yT + Math.max(0, h - 5)}" width="${bw}" height="5" fill="${fill(r)}"/>`;
+      const x0 = cx(i) - bw / 2, v = r[me.key];
+      if (stacked) {
+        const okN = Math.max(0, v - r.blocked);
+        s += block(x0, y(okN), y(0) - y(okN), 'var(--good)');
+        s += block(x0, y(v), y(okN) - y(v), 'var(--critical)');
+      } else {
+        s += block(x0, y(v), y(0) - y(v), fill(r));
+      }
+      // Vùng bắt chuột phủ cả cột — bắt theo từng khối thì tooltip nhấp nháy
+      // mỗi lần con trỏ đi qua ranh giới xanh/đỏ.
+      s += `<rect data-i="${i}" x="${x0}" y="${y(v)}" width="${bw}" height="${Math.max(2, y(0) - y(v))}" fill="transparent"/>`;
+      if (showVal) {
+        s += `<text x="${cx(i)}" y="${y(v) - 6}" text-anchor="middle" font-size="13" font-weight="660" fill="var(--ink-2)" class="num">${esc(fmt(v, me.fmt))}</text>`;
+      }
       // Nhãn trục X xoay 40° khi tên dài — nằm ngang thì chúng chồng lên nhau.
       const lb = esc(cut(r.key, 16));
       s += String(r.key).length > 6
         ? `<text x="${cx(i)}" y="${H - PB + 18}" font-size="11" fill="var(--ink-3)" text-anchor="end" transform="rotate(-40 ${cx(i)} ${H - PB + 18})">${lb}</text>`
-        : `<text x="${cx(i)}" y="${H - PB + 18}" font-size="12.5" fill="var(--ink-3)" text-anchor="middle">${lb}</text>`;
+        : `<text x="${cx(i)}" y="${H - PB + 18}" font-size="12.5" fill="var(--ink-3)" text-anchor="middle" class="num">${lb}</text>`;
     });
     return `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMinYMid meet" role="img" aria-label="${esc(me.label)}" style="max-width:${W}px">${s}</svg>`;
   }
 
   /** Đường — mặc định cho trục thời gian, vì hình dạng xu hướng mới là thứ cần đọc. */
   function line(rows, me) {
-    const W = 1000, H = 300, PL = 62, PR = 16, PT = 20, PB = 42;
+    const W = 1000, H = 320, PL = 62, PR = 16, PT = 22, PB = 42;
     const { top, step } = scale(Math.max(...rows.map((r) => r[me.key]), 0));
     const y = (v) => PT + (H - PT - PB) * (1 - v / top);
     const x = (i) => (rows.length === 1 ? (PL + W - PR) / 2 : PL + ((W - PL - PR) * i) / (rows.length - 1));
@@ -726,7 +981,7 @@
       // Nhãn thưa dần khi nhiều điểm, để trục X không thành một vệt chữ đè nhau.
       const every = Math.ceil(rows.length / 14);
       if (i % every === 0 || i === rows.length - 1) {
-        s += `<text x="${x(i)}" y="${H - PB + 20}" text-anchor="middle" font-size="11" fill="var(--ink-3)">${esc(cut(r.key, 10))}</text>`;
+        s += `<text x="${x(i)}" y="${H - PB + 20}" text-anchor="middle" font-size="11" fill="var(--ink-3)" class="num">${esc(cut(r.key, 10))}</text>`;
       }
     });
     return `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(me.label)}">${s}</svg>`;
@@ -740,24 +995,25 @@
     // Nhóm theo tool ra 39 dòng, theo giờ ra 24 — đổ hết xuống thì bảng dài
     // gấp ba biểu đồ ngay trên nó. Phân trang dùng chung với bảng người.
     const { from: exFrom } = pageOf('exrows', rows.length);
-    $('t-rows').innerHTML =
-      `<thead><tr><th>${esc(dim.label)}</th>` +
-      MS.map((m) => `<th class="r nw"${m.key === me.key ? ' style="color:var(--series-1)"' : ''}>${esc(m.label)}</th>`).join('') +
-      '<th class="r nw">Gần nhất</th></tr></thead><tbody>' +
-      rows.slice(exFrom, exFrom + PAGE_SIZE).map((r) => `<tr><td class="${cls}">${esc(cut(r.key, 48))}</td>` +
-        // Cột đang được vẽ thì đậm lên; các cột còn lại mờ đi. Bảng bảy cột mà
-        // cùng một sắc độ thì không ai tìm ra cột mình vừa chọn ở biểu đồ trên.
-        MS.map((m) => m.key === me.key
-          ? `<td class="r num nw" style="font-weight:660">${esc(fmt(r[m.key], m.fmt))}</td>`
-          : `<td class="r num nw dim">${esc(fmt(r[m.key], m.fmt))}</td>`).join('') +
-        `<td class="r num dim nw">${dt(r.last)}</td></tr>`).join('') +
-      '</tbody>';
+    $('t-rows').innerHTML = !rows.length
+      ? '<tbody><tr><td class="dim">Không có nhóm nào để hiện.</td></tr></tbody>'
+      : `<thead><tr><th>${esc(dim.label)}</th>` +
+        MS.map((m) => `<th class="r nw"${m.key === me.key ? ' style="color:var(--series-1)"' : ''}>${esc(m.label)}</th>`).join('') +
+        '<th class="r nw">Gần nhất</th></tr></thead><tbody>' +
+        rows.slice(exFrom, exFrom + PAGE_SIZE).map((r) => `<tr><td class="${cls}">${esc(cut(r.key, 48))}</td>` +
+          // Cột đang được vẽ thì đậm lên; các cột còn lại mờ đi. Bảng bảy cột mà
+          // cùng một sắc độ thì không ai tìm ra cột mình vừa chọn ở biểu đồ trên.
+          MS.map((m) => m.key === me.key
+            ? `<td class="r num nw" style="font-weight:660">${esc(fmt(r[m.key], m.fmt))}</td>`
+            : `<td class="r num nw dim">${esc(fmt(r[m.key], m.fmt))}</td>`).join('') +
+          `<td class="r num dim nw">${dt(r.last)}</td></tr>`).join('') +
+        '</tbody>';
     pager('rows-pager', 'exrows', rows.length, () => drawTable(rows, me, dim));
   }
 
   function downloadCsv() {
     if (!EX) return;
-    const dim = dimOf(state.dim), MS = measuresFor(dim.key);
+    const dim = dimOf(VIEW.dim), MS = measuresFor(dim.key);
     const head = [dim.label, ...MS.map((m) => m.label), 'Gần nhất'];
     // Bọc mọi ô trong ngoặc kép: tên người có dấu phẩy, và Excel sẽ tách nhầm cột.
     const q = (v) => '"' + String(v ?? '').replace(/"/g, '""') + '"';
@@ -766,65 +1022,144 @@
     // BOM ﻿: thiếu nó là Excel mở ra tiếng Việt thành ký tự rác.
     const url = URL.createObjectURL(new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' }));
     const a = document.createElement('a');
+    const r = activeRange();
+    // Tên file mang theo cả khoảng VÀ bộ lọc: hai lần tải về cùng tên mà khác
+    // nội dung là kiểu nhầm không ai truy ra được sau một tuần.
     a.href = url;
-    a.download = `mcp-${state.dim}-${state.days}d.csv`;
+    a.download = ['mcp', VIEW.dim, r.from, r.to, FILTER.user && 'nguoi', FILTER.app].filter(Boolean).join('-') + '.csv';
     a.click();
     URL.revokeObjectURL(url);
   }
 
-  // ── Nạp dữ liệu ────────────────────────────────────────────────────────
-  async function load() {
-    $('chart').innerHTML = '<div class="ok-empty dim">Đang tính…</div>';
-    const q = new URLSearchParams({ dim: state.dim, days: state.days, user: state.user });
-    try {
-      const r = await fetch('/api/explore?' + q, { cache: 'no-store' });
-      const j = await r.json();
-      if (!r.ok) throw new Error(j.error || 'HTTP ' + r.status);
-      EX = j;
-      draw();
-    } catch (e) {
-      $('chart').innerHTML = `<div class="ok-empty" style="color:var(--critical)">Không tải được dữ liệu: ${esc(e.message)}</div>`;
-    }
-  }
-  // buildControls dựng tuỳ chọn cho f-dim/f-days/f-kind VÀ gắn sự kiện; thiếu
-  // nó thì ô chọn rỗng và mọi thao tác im lặng không làm gì. Phải chạy TRƯỚC
-  // syncControls, vì syncControls đọc lại giá trị đang chọn của chính chúng.
-  buildControls();
-  syncControls();
-  load();
-  }
+  // ══════════════════════════════════════════════════════════════════════════
+  // NẠP DỮ LIỆU
+  // ══════════════════════════════════════════════════════════════════════════
 
-  // ── Đồng hồ real-time (góc trên) ─────────────────────────────────────
-  const clock = $('clock');
-  const tick = () => { if (clock) clock.textContent = new Date().toLocaleTimeString('vi-VN', { hour12: false }); };
-  tick();
-  setInterval(tick, 1000);
-
-  // ── Tự cập nhật dữ liệu ──────────────────────────────────────────────
-  // BAKED có sẵn = bản xem trước tĩnh (không backend) → render một lần.
-  // BAKED null = bản live trên Vercel → fetch /api/data rồi poll lại mỗi 30s.
   const REFRESH_MS = 30000;
-  const fetchData = async () => {
-    const r = await fetch('/api/data', { cache: 'no-store' });
-    if (!r.ok) throw new Error('HTTP ' + r.status);
-    return r.json();
+  const stamp = (ok) => {
+    $('stamp').innerHTML = ok
+      ? `<span class="live"></span>Cập nhật <b>${new Date().toLocaleTimeString('vi-VN', { hour12: false })}</b>`
+      : '<span class="live off"></span>Mất kết nối — đang giữ số cũ';
+    $('stamp').classList.toggle('stale', !ok);
   };
 
-  (async function boot() {
-    // Phần "Đào sâu" tự gọi /api/explore riêng, nên khởi động nó ĐỘC LẬP với
-    // phần trên: một bên hỏng thì bên kia vẫn hiện số.
-    if (BAKED) { render(BAKED); initExplore(); return; }
+  const getJson = async (url) => {
+    const r = await fetch(url, { cache: 'no-store' });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(j.error || 'HTTP ' + r.status);
+    return j;
+  };
+
+  /** Làm mờ TẠI CHỖ, không thay nội dung bằng chữ "Đang tính…". Thay nội dung
+   *  là thẻ tụt chiều cao và cả trang nhảy một cái mỗi lần bấm bộ lọc. */
+  const busy = (on) => $('wrap').classList.toggle('busy', on);
+
+  async function loadTop() {
+    DATA = await getJson('/api/data?' + filterQuery());
+    /**
+     * Máy chủ đã sửa khoảng (URL dán tay đòi 2 năm chẳng hạn) thì SỬA LUÔN
+     * trạng thái trang cho khớp. Không đồng bộ lại thì trang cứ đề nghị một
+     * khoảng, máy chủ cứ trả về khoảng khác, và nhãn trên nút mãi mãi nói khác
+     * con số bên dưới nó.
+     */
+    const r = DATA.range;
+    if (r && r.clamped && r.clamped.length) {
+      Object.assign(FILTER, { preset: r.preset || '', from: r.preset ? '' : r.from, to: r.preset ? '' : r.to });
+      pushUrl();
+    }
+    renderTop();
+    syncFilterBar();
+  }
+
+  /**
+   * Nhánh tĩnh nằm ở ĐÂY, không ở chỗ gọi.
+   *
+   * Bản đầu chỉ xử lý bản tĩnh trong applyFilter, nên ô "Nhóm theo" — vốn gọi
+   * thẳng loadExplore — vẫn đi tìm /api/explore và mở preview.html ra đổi cột
+   * là biểu đồ chết với dòng "Không tải được". Chặn một nơi duy nhất thì không
+   * còn đường nào đi vòng qua được.
+   */
+  async function loadExplore() {
+    if (STATIC) {
+      EX = (BAKED_EX && BAKED_EX.byDim[VIEW.dim]) || null;
+      if (EX) drawChart();
+      else $('chart').innerHTML = '<div class="empty">Bản xem trước này chưa nướng số cho cột đó.</div>';
+      return;
+    }
     try {
-      render(await fetchData());
-      initExplore();
+      EX = await getJson(`/api/explore?dim=${encodeURIComponent(VIEW.dim)}&` + filterQuery());
+      drawChart();
+    } catch (e) {
+      $('chart').innerHTML = `<div class="empty" style="color:var(--critical)">Không tải được biểu đồ: ${esc(e.message)}</div>`;
+    }
+  }
+
+  /**
+   * Đổi bộ lọc → cả hai khu đi lấy lại số, SONG SONG.
+   *
+   * `busy` chỉ bật cho thao tác NGƯỜI DÙNG vừa bấm, tuyệt đối không cho vòng
+   * poll 30s. Bản đầu để nó trong loadExplore nên cả trang mờ đi rồi sáng lại
+   * hai lần mỗi phút — ngay giữa lúc có người đang đọc bảng, và không hề có
+   * thao tác nào để giải thích cái nháy đó. Chỉ báo bận khi có người đang chờ.
+   */
+  async function applyFilter() {
+    // Bản tĩnh đã khoá mọi ô lọc toàn cục nên không có đường nào tới đây. Chốt
+    // lại một lần nữa cho chắc: một lần gọi lọt là một lần fetch chết vô cớ.
+    if (STATIC) return;
+    pushUrl();
+    syncFilterBar();
+    busy(true);
+    try {
+      const [a] = await Promise.allSettled([loadTop(), loadExplore()]);
+      stamp(a.status !== 'rejected');
+    } finally {
+      busy(false);
+    }
+  }
+
+  /** Nạp lại lặng lẽ — dùng cho poll định kỳ. Không mờ trang, không giật. */
+  async function refreshQuiet() {
+    const r = await Promise.allSettled([loadTop(), loadExplore()]);
+    stamp(!r.some((x) => x.status === 'rejected'));
+  }
+
+  (async function boot() {
+    buildFilterBar();
+    buildChartControls();
+
+    if (STATIC) {
+      DATA = BAKED;
+      renderTop();
+      // Bộ lọc TRẢ về đúng khoảng đã nướng trước khi vẽ thanh: mặc định của
+      // trang là "30 ngày tính tới hôm nay", mà bản nướng thì đứng yên ở ngày
+      // build — mở lại sau một tuần là nhãn nói một khoảng, số nói khoảng khác.
+      const b = (BAKED.range) || {};
+      Object.assign(FILTER, { preset: b.preset || '', from: b.preset ? '' : b.from, to: b.preset ? '' : b.to });
+      syncFilterBar();
+      await loadExplore();
+      $('stamp').innerHTML = '<span class="live off"></span>Bản xem trước tĩnh';
+      return;
+    }
+
+    try {
+      // Hai khu gọi hai endpoint khác nhau và khởi động ĐỘC LẬP: một bên hỏng
+      // thì bên kia vẫn hiện số. Trước đây initExplore chạy sau render nên
+      // /api/data chết là kéo cả biểu đồ chết theo, dù nó không liên quan.
+      await Promise.allSettled([loadTop(), loadExplore()]);
+      stamp(true);
     } catch (e) {
       document.querySelector('.wrap').insertAdjacentHTML('afterbegin',
         `<div class="card pad" style="border-color: var(--critical)">Không tải được dữ liệu: ${esc(e.message)}</div>`);
       return;
     }
-    // Lỗi mạng thoáng qua thì giữ số cũ, không làm trắng trang.
-    setInterval(async () => {
-      try { render(await fetchData()); } catch (e) { console.warn('[refresh]', e.message); }
+
+    // Lỗi mạng thoáng qua thì giữ số cũ, không làm trắng trang — chỉ đổi dấu
+    // hiệu ở góc trên để người xem biết con số đang đứng yên.
+    setInterval(() => {
+      // Đang mở lịch thì hoãn: vẽ lại giữa chừng là lịch tự đóng dưới tay người
+      // đang chọn dở.
+      if (calOpen) return;
+      refreshQuiet();
     }, REFRESH_MS);
   })();
 </script>

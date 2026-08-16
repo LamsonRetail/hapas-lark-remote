@@ -12,6 +12,8 @@
     "test": "node test/e2e.js",
     "test:race": "node test/refresh-race.js",
     "parity": "node test/parity-check.js",
+    "dashboard": "node dashboard/build.mjs && node dashboard/dev.mjs",
+    "dashboard:build": "node dashboard/build.mjs",
     "revoke": "node revoke.js",
     "token": "node token.js",
     "keepalive": "node src/keepalive.js",

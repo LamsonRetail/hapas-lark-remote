@@ -1,4 +1,5 @@
 import { impactedSet } from './impact.mjs';
+import { localDay, resolveRange } from './range.mjs';
 
 /**
  * Toàn bộ phép tính của dashboard, KHÔNG phụ thuộc gì vào repo.
@@ -17,7 +18,18 @@ export const SKIP_CLIENTS = new Set(['local-admin', 'canary', 'revoke-test-a']);
 const pct = (n, d) => (d ? +((n / d) * 100).toFixed(1) : 0);
 const quant = (s, q) => (s.length ? s[Math.min(s.length - 1, Math.floor(s.length * q))] : null);
 
-export async function computeDashboard({ sb, toolNames, appId, windowDays = 30 }) {
+/**
+ * `range`   khoảng đang xem, đã chuẩn hoá bởi resolveRange (range.mjs)
+ * `user`    lọc theo MỘT người, chuỗi rỗng = tất cả
+ * `app`     lọc theo MỘT ứng dụng đã cắm (Claude / Codex …), rỗng = tất cả
+ *
+ * Ba tham số này là bộ lọc TOÀN CỤC của trang. Trước đây hàm này chốt cứng 30
+ * ngày và không biết gì về người/ứng dụng, nên thanh chọn trên trang chỉ đổi
+ * được khu "Đào sâu" ở cuối — mọi KPI phía trên vẫn là 30 ngày của tất cả mọi
+ * người, mà không có gì nói ra điều đó.
+ */
+export async function computeDashboard({ sb, toolNames, appId, range, user = '', app = '' }) {
+  const rg = range || resolveRange({});
   const page = async (p) => {
     const out = [];
     for (let off = 0; off < 50000; off += 1000) {
@@ -27,7 +39,7 @@ export async function computeDashboard({ sb, toolNames, appId, windowDays = 30 }
     }
     return out;
   };
-  const since = new Date(Date.now() - windowDays * 86400000).toISOString();
+  const { since, until } = rg;
 
   // Đọc THẲNG raw audit_logs trong cửa sổ — không còn qua tầng rollup. Ở quy mô
   // này raw đủ nhẹ, và bỏ rollup thì đây là nguồn duy nhất, không lệch số.
@@ -51,18 +63,55 @@ export async function computeDashboard({ sb, toolNames, appId, windowDays = 30 }
     }
   };
 
-  const [raw, machines, canaryRow, sessionRow] = await Promise.all([
+  /**
+   * `client_app` cũng chỉ có sau supabase/audit-client-app.sql, và PostgREST
+   * KHÔNG bỏ qua cột lạ trong `select` — nó trả 400 và cả trang chết theo. Cùng
+   * cách xử lý với readMachines: hỏi kèm trước, hụt thì hỏi lại không kèm.
+   */
+  const AUDIT_COLS = 'created_at,tool_name,user_name,open_id,client_id,ok,duration_ms,lark_code,error_msg,args';
+  const readAudit = async () => {
     // `args` chỉ để impact.mjs nhận ra tham số trỏ ra ngoài Lark. Nó KHÔNG đi
     // xuống trình duyệt — computeDashboard chỉ trả về số đã gộp.
-    page(`audit_logs?source=eq.url&created_at=gte.${since}&select=created_at,tool_name,user_name,open_id,client_id,ok,duration_ms,lark_code,error_msg,args&order=created_at.asc`),
+    const q = (cols) => page(
+      `audit_logs?source=eq.url&created_at=gte.${since}&created_at=lt.${until}&select=${cols}&order=created_at.asc`,
+    );
+    try {
+      return await q(`${AUDIT_COLS},client_app`);
+    } catch {
+      return q(AUDIT_COLS);
+    }
+  };
+
+  const [raw, machines, canaryRow, sessionRow, ingestRow] = await Promise.all([
+    readAudit(),
     readMachines(),
     sb('audit_logs?source=eq.url&tool_name=eq.canary_heartbeat&select=created_at,ok,args&order=created_at.desc&limit=1'),
     sb('v_session_health?select=created_at,state&limit=1'),
+    /**
+     * Độ tươi đường nạp dữ liệu hỏi RIÊNG, không lấy dòng cuối của `raw`.
+     *
+     * Đây là câu "server còn đang ghi audit không", đáp án luôn tính từ BÂY GIỜ.
+     * Lấy từ `raw` là để bộ lọc đụng vào nó: chọn xem lại tuần trước thì dải
+     * canh gác đọc thành "9 ngày chưa nạp được dữ liệu" và báo đỏ — một cảnh
+     * báo giả do chính người xem vừa tự tạo ra bằng cách đổi khoảng ngày.
+     */
+    sb('audit_logs?source=eq.url&select=created_at&order=created_at.desc&limit=1'),
   ]);
 
-  const calls = raw.filter(
+  const scope = raw.filter(
     (r) => !SKIP_CLIENTS.has(r.client_id) && !r.tool_name.startsWith('__auth.') && r.tool_name !== 'canary_heartbeat',
   );
+
+  /**
+   * Danh sách người / ứng dụng dựng TRƯỚC khi lọc — lọc rồi mới liệt kê thì
+   * chọn xong một người là ô chọn chỉ còn đúng người đó, không đổi sang ai được.
+   */
+  const usersAvail = [...new Set(scope.map((r) => r.user_name).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'vi'));
+  const appsAvail = [...new Set(scope.map((r) => r.client_app).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'vi'));
+  // Dòng ghi trước 14/08 chưa có `client_app`. Lọc theo ứng dụng là chúng biến
+  // mất — không sai, nhưng phải NÓI RA, không thì người xem đọc ra một cú sụt
+  // lưu lượng không có thật. Trang hiện con số này ngay cạnh bộ lọc.
+  const noApp = scope.filter((r) => !r.client_app).length;
 
   /**
    * Bảng này đếm lượt CHẶN người dùng, không đếm lỗi thô — xem impact.mjs.
@@ -70,14 +119,32 @@ export async function computeDashboard({ sb, toolNames, appId, windowDays = 30 }
    * xong đi đường khác và người dùng không thấy gì. Đếm cả chúng thì bảng lúc
    * nào cũng đỏ trong khi tool chạy mượt, và một cảnh báo luôn bật là một
    * cảnh báo không ai đọc.
+   *
+   * Tính trên `scope` chứ không trên `calls` đã lọc: luật "được cứu trong 5
+   * phút" cần lượt thành công NGAY SAU của chính người đó, mà lọc theo ứng dụng
+   * có thể cắt mất đúng lượt cứu đó — và một lỗi đã được cứu sẽ hiện thành lỗi
+   * thật chỉ vì người xem vừa bấm một cái nút lọc.
    */
-  const blockedRows = impactedSet(calls);
+  const blockedRows = impactedSet(scope);
   const isBlocked = (r) => blockedRows.has(r);
+
+  const calls = scope.filter((r) => (!user || r.user_name === user) && (!app || r.client_app === app));
+  /**
+   * Đếm lượt bị chặn TRONG tập đã lọc.
+   *
+   * `blockedRows` cố ý dựng trên `scope` chưa lọc (luật "được cứu" cần lượt
+   * thành công của chính người đó), nhưng lấy thẳng `.size` của nó làm KPI thì
+   * sai hẳn: lọc còn một người mà con số hỏng vẫn là của cả tổ, chia cho số
+   * lượt của riêng người đó — tỉ lệ ra được cả trên 100%.
+   */
+  const blockedCount = calls.reduce((n, r) => n + (blockedRows.has(r) ? 1 : 0), 0);
 
   // ── theo ngày ──
   const dayMap = new Map();
   for (const r of calls) {
-    const d = r.created_at.slice(0, 10);
+    // Cắt ngày theo GIỜ VN. Cắt theo UTC (bản cũ) là mọi lượt gọi 0h–7h sáng
+    // rơi sang cột hôm trước — xem ghi chú múi giờ ở range.mjs.
+    const d = localDay(r.created_at);
     const e = dayMap.get(d) || { day: d, calls: 0, blocked: 0 };
     e.calls++;
     if (isBlocked(r)) e.blocked++;
@@ -165,8 +232,18 @@ export async function computeDashboard({ sb, toolNames, appId, windowDays = 30 }
     if (!p.last || r.created_at > p.last) p.last = r.created_at;
   }
 
+  /**
+   * Bộ lọc toàn cục áp cho CẢ hai nguồn, không riêng audit.
+   *
+   * Lọc "chỉ Claude" mà bảng người vẫn bày chip Codex thì bảng đang trả lời một
+   * câu khác câu đang hỏi. Khớp người theo `username` vì `machines` không giữ
+   * `user_name` của audit — trật tên thì người đó chỉ mất mấy con chip, chứ
+   * không hiện ra số của người khác.
+   */
   for (const m of machines) {
     if (!m.user_id) continue;
+    if (app && m.client_app !== app) continue;
+    if (user && m.username && m.username !== user) continue;
     const p = person(m.user_id);
     p.name = p.name || m.username || null;
     p.clients.push({ app: m.client_app || 'connector', status: m.status, installed: m.installed_at, seen: m.last_seen });
@@ -216,7 +293,12 @@ export async function computeDashboard({ sb, toolNames, appId, windowDays = 30 }
 
   return {
     generatedAt: new Date().toISOString(),
-    windowDays,
+    // Khoảng + bộ lọc trả NGƯỢC về trang, không để trang tự nhớ mình đã hỏi gì.
+    // Trang poll lại mỗi 30s: nếu máy chủ đã kẹp biên khoảng (dán URL 2 năm
+    // chẳng hạn) mà trang vẫn hiện con số cũ trên nút, thì nhãn và số liệu nói
+    // hai chuyện khác nhau. Cứ để máy chủ nói nó đã tính cái gì.
+    range: { from: rg.from, to: rg.to, preset: rg.preset, days: rg.days, clamped: rg.clamped },
+    filters: { user, app, users: usersAvail, apps: appsAvail, noApp },
     appId,
     from: calls.length ? calls[0].created_at : null,
     to: calls.length ? calls[calls.length - 1].created_at : null,
@@ -225,8 +307,8 @@ export async function computeDashboard({ sb, toolNames, appId, windowDays = 30 }
       // MỘT con số về hỏng hóc, không phải hai. Trước đây có cả `errors` thô
       // lẫn `noResp`, và cái thô nhảy lên KPI vì nó to hơn — bảng báo 11% lỗi
       // trong khi thực tế chỉ 3% chạm tới người dùng.
-      blocked: blockedRows.size,
-      blockRate: pct(blockedRows.size, calls.length),
+      blocked: blockedCount,
+      blockRate: pct(blockedCount, calls.length),
       p50: quant(durs, 0.5),
       p95: quant(durs, 0.95),
       users: people.filter((p) => p.calls).length,
@@ -244,7 +326,8 @@ export async function computeDashboard({ sb, toolNames, appId, windowDays = 30 }
       // chỉ cần hai con số tổng, không cần chở cả mảng.
       canary: canary && { at: canary.created_at, ok: canary.ok, probes: canaryArgs.probes, failing: canaryArgs.failing },
       session: sessionRow[0] ? { at: sessionRow[0].created_at, ...sessionRow[0].state } : null,
-      ingest: { at: raw.length ? raw[raw.length - 1].created_at : null },
+      // Luôn là "dòng audit mới nhất TÍNH TỚI GIỜ", độc lập với khoảng đang xem.
+      ingest: { at: ingestRow[0] ? ingestRow[0].created_at : null },
     },
     daily,
     tools,

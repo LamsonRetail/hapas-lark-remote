@@ -1,4 +1,5 @@
 import { computeDashboard } from '../compute.mjs';
+import { resolveRange } from '../range.mjs';
 import { sb, requireSupabase } from '../sb.mjs';
 // Import thay vì đọc file: hàm serverless được đóng gói riêng, file tĩnh cạnh
 // nó không chắc có mặt trong bundle — còn import thì bundler bắt buộc phải kéo theo.
@@ -19,10 +20,20 @@ export default async function handler(req, res) {
   if (!requireSupabase(res)) return;
 
   try {
+    /**
+     * Khoảng + bộ lọc đến từ query string, tức là từ NGƯỜI NGOÀI — resolveRange
+     * kẹp biên và không bao giờ ném lỗi, nên một URL viết sai chỉ rơi về mốc mặc
+     * định chứ không làm trắng trang. Cắt độ dài chuỗi lọc vì chúng chỉ dùng để
+     * so bằng trong bộ nhớ, không ghép vào truy vấn PostgREST (tên người có dấu
+     * phẩy và ngoặc — đúng hai ký tự PostgREST dùng làm dấu phân cách).
+     */
     const data = await computeDashboard({
       sb,
       toolNames,
       appId: process.env.LARK_APP_ID || '',
+      range: resolveRange(req.query || {}),
+      user: String(req.query?.user || '').slice(0, 200),
+      app: String(req.query?.app || '').slice(0, 80),
     });
     // KHÔNG cache. Trang poll lại mỗi 30s để theo dõi real-time, mà `s-maxage`
     // thì bảo CDN giữ bản cũ tới 60s + phục vụ stale thêm 120s — poll xong vẫn

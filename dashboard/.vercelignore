@@ -1,0 +1,22 @@
+# Thứ KHÔNG được đẩy lên Vercel.
+#
+# Không có file này thì `vercel deploy` gói cả thư mục — kể cả preview.html,
+# vốn nướng sẵn tên thật của nhân viên, open_id và hạn token. Hôm nay nó không
+# lộ vì Vercel Protection đang bật và mọi đường dẫn đều 302 về trang đăng nhập.
+# Nhưng "an toàn nhờ một cái công tắc ở nơi khác" thì không phải an toàn: tắt
+# bảo vệ đi một lần — để gửi link cho ai đó xem nhanh chẳng hạn — là toàn bộ
+# danh sách nhân sự nằm ở /preview cho bất kỳ ai đoán ra đường dẫn.
+#
+# .gitignore đã chặn preview.html khỏi git, nhưng Vercel CLI không đọc file đó.
+# Hai hàng rào cho hai đường đi khác nhau, phải dựng riêng.
+
+*preview.html
+.env*
+
+# Chỉ chạy tại chỗ, và nó ĐỌC .env — không có việc gì trên máy chủ.
+dev.mjs
+
+# Chạy lúc build ở máy mình. Trên Vercel nó vừa thừa vừa gãy: nó import
+# ../src/config.js, mà thư mục gốc deploy là dashboard/ nên đường đó không tồn
+# tại. index.html + tools.json là KẾT QUẢ của nó, và chúng được commit sẵn.
+build.mjs

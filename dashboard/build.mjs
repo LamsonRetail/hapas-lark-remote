@@ -5,7 +5,9 @@ import { config } from '../src/config.js';
 import { sbFetch } from '../src/supabase.js';
 import { TOOLS } from '../src/tools/index.js';
 import { computeDashboard } from './compute.mjs';
-import { DIMENSIONS, MEASURES, WINDOWS } from './explore-schema.mjs';
+import { DIMENSIONS, MEASURES } from './explore-schema.mjs';
+import { EXPLORE_COLS, aggregate } from './explore-compute.mjs';
+import { DEFAULT_PRESET, MAX_RANGE_DAYS, PRESETS, TZ_MIN, resolveRange } from './range.mjs';
 
 /**
  * Dựng các trang dashboard.
@@ -81,10 +83,38 @@ function build(tplFile, { data = null, extra = {} } = {}) {
 //
 // Danh mục cột nướng vào trang để ô chọn không phải khai lại — lệch một cái
 // tên là trang chào lựa chọn mà máy chủ từ chối.
-const SCHEMA = { DIMENSIONS, MEASURES, WINDOWS };
-const data = await computeDashboard({ sb, toolNames: TOOLS.map((t) => t.name), appId: config.appId });
+const SCHEMA = { DIMENSIONS, MEASURES, PRESETS, DEFAULT_PRESET, MAX_RANGE_DAYS, TZ_MIN };
 
-write('preview.html', build('template.html', { data, extra: { SCHEMA } }));
+const range = resolveRange({ preset: DEFAULT_PRESET });
+const data = await computeDashboard({ sb, toolNames: TOOLS.map((t) => t.name), appId: config.appId, range });
+
+/**
+ * Số của khu biểu đồ, nướng sẵn cho TỪNG cột nhóm.
+ *
+ * Bản preview.html không có backend, nên trước đây khu này mở ra là một dòng
+ * "Không tải được dữ liệu" đỏ chót. Chấp nhận được hồi nó còn là khu phụ ở cuối
+ * trang; giờ nó là biểu đồ CHÍNH, và một bản xem trước mà biểu đồ chính báo lỗi
+ * thì không xem trước được cái gì.
+ *
+ * Sáu phép gộp trên cùng một tập hàng nên gần như miễn phí. Nướng KẾT QUẢ ĐÃ
+ * GỘP, tuyệt đối không nướng hàng thô: hàng thô mang theo `args` và `error_msg`
+ * kèm id tài liệu, mà preview.html là một file nằm trong repo.
+ */
+const exRows = [];
+for (let off = 0; off < 200000; off += 1000) {
+  const chunk = await sb(
+    `audit_logs?created_at=gte.${range.since}&created_at=lt.${range.until}&source=eq.url`
+    + `&select=${EXPLORE_COLS.join(',')}&order=created_at.asc&limit=1000&offset=${off}`,
+  );
+  exRows.push(...chunk);
+  if (chunk.length < 1000) break;
+}
+const EXPLORE = {
+  range: { from: range.from, to: range.to, preset: range.preset, days: range.days },
+  byDim: Object.fromEntries(DIMENSIONS.map((d) => [d.key, aggregate({ rows: exRows, dim: d.key })])),
+};
+
+write('preview.html', build('template.html', { data, extra: { SCHEMA, EXPLORE } }));
 write('index.html', DOCTYPE + build('template.html', { extra: { SCHEMA } }));
 
 // Hàm serverless không import được src/ (thiếu biến môi trường của Lark), nên
