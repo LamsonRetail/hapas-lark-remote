@@ -133,13 +133,63 @@ export function resolveBearer(token) {
   return { ...row, clientApp: appNameOf(db, row.clientId) }; // { openId, name, clientId, clientApp, expiresAt }
 }
 
-function issueTokens(openId, name, clientId) {
+/**
+ * Số CẶP token còn sống tối đa cho mỗi (người, ứng dụng).
+ *
+ * Không giới hạn thì bộ token phình đơn điệu: nút "Disconnect" của Claude KHÔNG
+ * gọi `/revoke` về đây (đã xác minh bằng log ngày 03/09/2026 — cắm lại không
+ * sinh một dòng revoke nào), nên mỗi lần cắm lại là thêm một cặp, cặp cũ sống
+ * tiếp 30/180 ngày. Đo trên tài khoản thật: một người có 18 token còn dùng
+ * được, riêng một client_id đã 3 cặp.
+ *
+ * KHÔNG bỏ hết cặp cũ khi cấp cặp mới. DCR gộp mọi bản Claude vào CHUNG một
+ * client_id, nên cùng một người dùng Claude Desktop và claude.ai web sẽ trùng
+ * (openId, clientId); bỏ hết nghĩa là đăng nhập bên này ngắt phiên bên kia.
+ * Giữ vài cặp gần nhất là chặn được phình mà không giết phiên đang dùng.
+ */
+const MAX_GRANTS = 5;
+
+/**
+ * Bỏ những cặp CŨ NHẤT vượt quá ngưỡng của đúng (người, ứng dụng) đó.
+ * Xoá theo `grantId` nên access và refresh của cùng một lần cấp đi liền nhau —
+ * bỏ lẻ một nửa thì client vẫn refresh lại được, coi như chưa bỏ gì.
+ */
+function pruneGrants(db, openId, clientId) {
+  const grants = new Map();
+  for (const [hash, t] of Object.entries(db.tokens)) {
+    if (t.openId !== openId || t.clientId !== clientId || !t.grantId) continue;
+    const g = grants.get(t.grantId) || { at: t.issuedAt || 0, hashes: [] };
+    g.at = Math.max(g.at, t.issuedAt || 0);
+    g.hashes.push(hash);
+    grants.set(t.grantId, g);
+  }
+  if (grants.size <= MAX_GRANTS) return 0;
+  const old = [...grants.values()].sort((a, b) => b.at - a.at).slice(MAX_GRANTS);
+  for (const g of old) for (const h of g.hashes) delete db.tokens[h];
+  return old.length;
+}
+
+function issueTokens(openId, name, clientId, replaceGrantId = null) {
   const db = load();
   const access = rand(32);
   const refresh = rand(32);
   const ttl = 30 * 24 * 3600 * 1000;
-  db.tokens[hashToken(access)] = { openId, name, clientId, kind: 'access', expiresAt: Date.now() + ttl };
-  db.tokens[hashToken(refresh)] = { openId, name, clientId, kind: 'refresh', expiresAt: Date.now() + ttl * 6 };
+  const grantId = rand(8);
+  const issuedAt = Date.now();
+
+  // Xoay refresh token: cặp CŨ bị thay, không phải bổ sung. Trước đây chỉ xoá
+  // đúng refresh token gửi lên, còn access token cùng cặp nằm lại tới 30 ngày.
+  if (replaceGrantId) {
+    for (const [hash, t] of Object.entries(db.tokens)) {
+      if (t.grantId === replaceGrantId) delete db.tokens[hash];
+    }
+  }
+
+  db.tokens[hashToken(access)] = { openId, name, clientId, kind: 'access', grantId, issuedAt, expiresAt: issuedAt + ttl };
+  db.tokens[hashToken(refresh)] = { openId, name, clientId, kind: 'refresh', grantId, issuedAt, expiresAt: issuedAt + ttl * 6 };
+
+  const dropped = pruneGrants(db, openId, clientId);
+  if (dropped) console.log(`[oauth] ${name || openId} / ${appNameOf(db, clientId) || clientId}: bỏ ${dropped} cặp token cũ (giữ ${MAX_GRANTS} cặp gần nhất)`);
   save(db);
   // Đây là chỗ duy nhất phát bearer — cả lần cắm đầu và mỗi lần xoay refresh
   // token đều đi qua đây, nên chỉ cần ghi danh tính ở một chỗ. Fire-and-forget:
@@ -330,6 +380,11 @@ export function buildOAuthRouter() {
     const back = new URL(f.redirectUri);
     back.searchParams.set('code', code);
     if (f.state) back.searchParams.set('state', f.state);
+    // Mốc phân định trách nhiệm: có dòng này mà không thấy `POST /token` ngay
+    // sau đó nghĩa là phần của ta đã xong — Lark duyệt rồi, code đã phát — và
+    // thứ hỏng nằm ở trình duyệt hoặc phía Claude. Không có dòng này thì ngược
+    // lại: Lark chưa từng duyệt. Trước đây hai trường hợp đó trông y hệt nhau.
+    console.log(`[oauth] đã duyệt Lark, phát code cho ${who.name} — chờ Claude đổi lấy token`);
     res.json({ status: 'done', redirect: back.toString(), name: who.name });
   });
 
@@ -369,13 +424,19 @@ export function buildOAuthRouter() {
     if (b.grant_type === 'refresh_token') {
       const row = resolveBearer(b.refresh_token);
       if (!row || row.kind !== 'refresh') return deny('refresh token không hợp lệ hoặc đã hết hạn');
-      const db = load();
-      delete db.tokens[hashToken(b.refresh_token)]; // xoay, giống Lark
-      save(db);
+
+      // Token cấp TRƯỚC bản vá cặp không có `grantId`. Với chúng vẫn phải xoay
+      // theo cách cũ — bỏ đúng phiếu gửi lên — nếu không thì refresh token đã
+      // dùng vẫn sống, đúng cái mà vòng xoay sinh ra để chặn.
+      if (!row.grantId) {
+        const db = load();
+        delete db.tokens[hashToken(b.refresh_token)];
+        save(db);
+      }
       // Bearer sống 30 ngày nên đây là sự kiện hiếm — ghi mọi lượt vẫn rẻ, và
       // nó là mốc duy nhất chứng minh vòng xoay token phía Claude còn chạy.
       auditAuth({ event: 'refresh', openId: row.openId, userName: row.name, clientId: row.clientId });
-      return res.json(issueTokens(row.openId, row.name, row.clientId));
+      return res.json(issueTokens(row.openId, row.name, row.clientId, row.grantId || null));
     }
 
     auditAuth({ event: 'grant_denied', clientId: b.client_id || null, ok: false, errorMsg: 'grant_type không hỗ trợ', detail: { grant_type: b.grant_type || null } });
@@ -424,10 +485,39 @@ const shell = (body) => `<!doctype html><meta charset="utf-8">
  a.btn{display:block;text-align:center;background:#2563eb;color:#fff;padding:13px;border-radius:9px;text-decoration:none;font-weight:600}
  code{font-size:20px;letter-spacing:2px;font-weight:600}
  .muted{color:#888;font-size:13px}
+ .warn{background:#fef3c7;border:1px solid #fcd34d;color:#78350f;border-radius:9px;padding:12px 14px;margin:16px 0;font-weight:600}
+ @media(prefers-color-scheme:dark){.warn{background:#3a2e0b;border-color:#7c5e10;color:#fde68a}}
+ button.btn{display:block;width:100%;background:#2563eb;color:#fff;padding:13px;border:0;border-radius:9px;font:inherit;font-weight:600;cursor:pointer}
 </style>${body}`;
 
 const errPage = (msg) => shell(`<div class="box"><h3>Không kết nối được</h3><p>${msg}</p></div>`);
 
+/**
+ * Trang chờ duyệt Lark.
+ *
+ * Bản trước hỏng theo một cách rất kín: nó mở Lark bằng TAB MỚI mà không hề nói
+ * người dùng phải quay lại tab này. Duyệt xong trên Lark thì tab Lark chẳng có
+ * gì thêm, nên người ta quay về tab CLAUDE — thấy vẫn "chưa connect" thì bấm
+ * Connect lần nữa, sinh flow mới và mã mới. Vài vòng là ba bốn tab cùng chờ,
+ * mỗi tab một mã khác nhau, và cái tab đang giữ lệnh chuyển hướng thì không ai
+ * nhìn tới.
+ *
+ * Hậu quả đo được ngày 03/09/2026: token Lark ĐÃ lưu (persistTokens chạy trước
+ * khi phát code) nhưng Claude không bao giờ gọi `/token`, nên người dùng thấy
+ * "duyệt xong xuôi mà vẫn chưa kết nối". Hôm đó 16 lượt mở trang chỉ đổi được
+ * 9 token; có máy mở 4 lần trong 2 phút mà không lần nào tới `/token`.
+ *
+ * Bốn thay đổi, đều nhắm đúng chỗ đó:
+ *   1. Nói THẲNG là phải quay lại trang này — chặn cái vòng lặp từ gốc.
+ *   2. Xong thì vẫn hiện link bấm tay, phòng khi lệnh chuyển hướng không chạy
+ *      (tab nền bị trình duyệt bóp). Trước đây hỏng ở đây là hỏng câm.
+ *   3. Hỏi lại NGAY khi tab được nhìn lại, không chờ hết nhịp 2.5s — người dùng
+ *      quay về là thấy kết quả luôn.
+ *   4. Hết hạn thì có nút lấy mã mới, thay vì một dòng chữ bảo tự tải lại.
+ *
+ * Vòng poll giữ nguyên: nó đã chạy đúng qua 98 lượt đăng nhập thành công, không
+ * có lý do gì đụng vào.
+ */
 const loginPage = (flowId, url, userCode) =>
   shell(`
 <h2>Kết nối Lark</h2>
@@ -436,13 +526,44 @@ const loginPage = (flowId, url, userCode) =>
   <a class="btn" href="${url}" target="_blank" rel="noopener">Đăng nhập Lark</a>
   <p style="text-align:center;margin:16px 0 0">Mã xác nhận: <code>${userCode}</code></p>
 </div>
+<div class="warn">Duyệt xong trên Lark, hãy QUAY LẠI TRANG NÀY. Đừng quay về Claude và bấm Connect lại — làm vậy sẽ tạo mã mới và lần duyệt vừa rồi bị bỏ.</div>
 <p id="s" class="muted">Đang chờ bạn duyệt trên Lark…</p>
+<div id="done" style="display:none">
+  <a class="btn" id="go" href="#">Quay lại Claude</a>
+  <p class="muted" style="text-align:center">Nếu trang không tự chuyển, bấm nút trên.</p>
+</div>
+<div id="again" style="display:none"><button class="btn" onclick="location.reload()">Lấy mã mới</button></div>
 <script>
 const s=document.getElementById('s');
-setInterval(async()=>{
-  const r=await fetch('/authorize/poll?flow=${flowId}').then(r=>r.json()).catch(()=>({status:'pending'}));
-  if(r.status==='done'){s.textContent='Xong — đang quay lại Claude…';location.href=r.redirect;}
-  else if(r.status==='expired'){s.textContent='Hết hạn. Tải lại trang để lấy mã mới.';}
-  else if(r.status==='error'){s.textContent='Lỗi: '+r.message;}
-},2500);
+const flow='${flowId}';
+let stopped=false;
+
+async function tick(){
+  if(stopped) return;
+  const r=await fetch('/authorize/poll?flow='+flow,{cache:'no-store'}).then(r=>r.json()).catch(()=>({status:'pending'}));
+  if(r.status==='done'){
+    stopped=true;
+    s.textContent='Đã duyệt xong — đang quay lại Claude…';
+    // Hiện link TRƯỚC khi chuyển hướng: tab nền bị bóp thì lệnh dưới không
+    // chạy, và khi đó đây là đường thoát duy nhất người dùng còn thấy.
+    const g=document.getElementById('go');
+    g.href=r.redirect;
+    document.getElementById('done').style.display='block';
+    location.href=r.redirect;
+  } else if(r.status==='expired'){
+    stopped=true;
+    s.textContent='Mã đã hết hạn.';
+    document.getElementById('again').style.display='block';
+  } else if(r.status==='error'){
+    stopped=true;
+    s.textContent='Lỗi: '+r.message;
+    document.getElementById('again').style.display='block';
+  }
+}
+
+setInterval(tick,2500);
+// Quay lại tab là hỏi ngay, đừng bắt chờ hết nhịp — và nếu trình duyệt đã treo
+// setInterval lúc tab ở nền thì đây là thứ đánh thức lại vòng lặp.
+document.addEventListener('visibilitychange',()=>{ if(!document.hidden) tick(); });
+window.addEventListener('pageshow',tick);
 </script>`);
