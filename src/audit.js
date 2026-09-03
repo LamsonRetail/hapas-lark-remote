@@ -153,6 +153,23 @@ async function drainSpill() {
     // Dòng rách (crash giữa lúc ghi) thì bỏ đúng dòng đó, đừng chặn cả file.
     try {
       const { _spilled_at, _why, ...row } = JSON.parse(l);
+      /**
+       * Trả lại đúng MỐC THỜI GIAN GỐC, nếu không `created_at` sẽ lấy `now()`
+       * theo mặc định của bảng — tức lúc NẠP LẠI chứ không phải lúc gọi tool.
+       *
+       * Sự cố 402 lần này kéo 13 tiếng; để mặc định thì toàn bộ chỗ đó dồn vào
+       * đúng một khoảnh khắc lúc Supabase sống lại: dashboard thấy một cột vọt
+       * lên vô nghĩa, còn khoảng 03–04/09 thì trống trơn. Mất sạch giá trị tra
+       * cứu — đúng thứ mà cái file dự phòng này sinh ra để giữ, và đúng thứ cần
+       * cho quy trình "hỏi giờ chính xác rồi tra log".
+       *
+       * `_spilled_at` là lúc dồn ra đĩa, sau lời gọi thật ~5 giây (chu kỳ
+       * flush) — sai số đó không đáng kể so với việc lệch cả ngày.
+       *
+       * Bảng chưa có cột thì `flush()` tự gỡ ra rồi gửi lại (xem missingCols),
+       * nên trường hợp xấu nhất cũng chỉ quay về đúng hành vi cũ.
+       */
+      if (_spilled_at) row.created_at = _spilled_at;
       rows.push(row);
     } catch {}
   }
