@@ -10,6 +10,7 @@ import { auditEnabled, auditAuth, flushAudit } from './audit.js';
 import { readFile, resetFiles } from './files.js';
 import { startCanary } from './canary.js';
 import { startKeepalive } from './keepalive.js';
+import { buildAdminRouter, adminEnabled } from './admin.js';
 
 resetFiles(); // file tạm của lần chạy trước không còn ai giữ link
 
@@ -24,12 +25,28 @@ app.use((req, res, next) => {
     // /files nhận bearer qua ?token= (browser không gửi được header Authorization).
     // Che giá trị token trước khi log — nếu không, bearer sống 30 ngày rơi vào stdout.
     const url = req.originalUrl.replace(/([?&]token=)[^&]*/gi, '$1[redacted]').slice(0, 90);
-    console.log(`${new Date().toISOString().slice(11, 19)} ${res.statusCode} ${req.method} ${url} ${Date.now() - t}ms "${ua}"`);
+    /**
+     * AI gọi, chứ không chỉ gọi BẰNG GÌ.
+     *
+     * Mọi người dùng Claude đều hiện lên là `"Claude-User"`, nên khi một người
+     * báo lỗi thì không có cách nào chỉ ra dòng nào trong log là của họ. Bảng
+     * audit có `open_id`, nhưng nó nằm ở Supabase — và ngày 03/09/2026 Supabase
+     * khoá vì hết quota egress, mất luôn khả năng chẩn đoán đúng lúc cần nhất:
+     * Nguyễn Thùy Chi báo connector không vào được mà không có gì để đối chiếu.
+     *
+     * Dòng này KHÔNG phụ thuộc Supabase. Danh tính do handler giải sẵn và gắn
+     * vào `req.who`, nên không tốn thêm lần đọc đĩa nào.
+     */
+    const who = req.who ? ` ${req.who}` : '';
+    console.log(`${new Date().toISOString().slice(11, 19)} ${res.statusCode} ${req.method} ${url} ${Date.now() - t}ms "${ua}"${who}`);
   });
   next();
 });
 
 app.use(buildOAuthRouter());
+
+// Chưa đặt ADMIN_TOKEN thì router rỗng — route không tồn tại, không phải 401.
+app.use(buildAdminRouter());
 
 app.get('/health', (_req, res) => res.json({ ok: true, tools: TOOL_COUNT, users: listUsers().length }));
 
@@ -39,6 +56,7 @@ app.get('/health', (_req, res) => res.json({ ok: true, tools: TOOL_COUNT, users:
 app.get('/files/:id', (req, res) => {
   const bearer = (req.headers.authorization || '').replace(/^Bearer\s+/i, '') || String(req.query.token || '');
   const session = resolveBearer(bearer);
+  if (session) req.who = session.name || session.openId;
   if (!session) return res.status(401).send('Cần đăng nhập.');
 
   const f = readFile(req.params.id, session.openId);
@@ -88,6 +106,8 @@ function noteDenied(session, req) {
 app.post('/mcp', express.json({ limit: '8mb' }), async (req, res) => {
   const bearer = (req.headers.authorization || '').replace(/^Bearer\s+/i, '');
   const session = resolveBearer(bearer);
+  // Gắn cả khi SAI loại token: dòng 401/400 của ai mới đúng là dòng cần đọc.
+  if (session) req.who = session.name || session.openId;
 
   if (!session || session.kind !== 'access') {
     noteDenied(session, req);
@@ -141,6 +161,7 @@ const server = app.listen(config.port, () => {
   console.log(`  users  : ${listUsers().length} đã đăng nhập`);
   console.log(`  audit  : ${auditEnabled ? "Supabase → audit_logs (source='url')" : 'TẮT (thiếu SUPABASE_URL / SERVICE_ROLE_KEY)'}`);
   console.log(`  machine: ${auditEnabled ? "Supabase → machines (machine_id 'url-*')" : 'TẮT'}`);
+  console.log(`  admin  : ${adminEnabled ? 'POST /admin/refresh (gia hạn token, cần x-admin-token)' : 'TẮT (chưa đặt ADMIN_TOKEN)'}`);
   startCanary();
   startKeepalive();
 });
