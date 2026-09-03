@@ -108,6 +108,37 @@ function reauth(openId, userName, reason) {
 }
 
 /**
+ * Xoay token NGAY. Chỉ gọi khi ĐANG giữ khoá của user này.
+ *
+ * Tách khỏi `getValidAccessToken` để `forceRefresh` dùng lại được cùng một
+ * đoạn: hai đường vào khác nhau ở chỗ CÓ ĐI HAY KHÔNG, còn cách đi thì phải
+ * giống hệt — nhất là chuyện ghi đè refresh token mới.
+ */
+async function rotate(openId, u) {
+  if (!u.refreshToken) throw reauth(openId, u.name, 'Không có refresh token — cần đăng nhập lại (thiếu scope offline_access).');
+  if (Date.now() > u.refreshExpiresAt) throw reauth(openId, u.name, 'Refresh token đã quá 7 ngày — cần đăng nhập lại.');
+
+  const j = await tokenEndpoint({ grant_type: 'refresh_token', refresh_token: u.refreshToken });
+  if (!j.access_token) {
+    throw reauth(openId, u.name, `Refresh thất bại (${j.error || '?'}) — cần đăng nhập lại.`);
+  }
+
+  saveUser(openId, {
+    ...u,
+    accessToken: j.access_token,
+    // Lark XOAY refresh token mỗi lần dùng. Phải ghi đè cái mới, nếu không
+    // lần refresh sau sẽ reuse token đã chết và mất session.
+    refreshToken: j.refresh_token || u.refreshToken,
+    accessExpiresAt: Date.now() + (j.expires_in || 7200) * 1000,
+    refreshExpiresAt: j.refresh_token_expires_in
+      ? Date.now() + j.refresh_token_expires_in * 1000
+      : u.refreshExpiresAt,
+    updatedAt: Date.now(),
+  });
+  return j.access_token;
+}
+
+/**
  * Lấy access token còn hạn của một user, tự refresh nếu cần.
  *
  * Toàn bộ thân hàm nằm trong khoá theo user, và ĐỌC LẠI trạng thái sau khi
@@ -121,26 +152,26 @@ export function getValidAccessToken(openId) {
 
     if (Date.now() < u.accessExpiresAt - 120_000) return u.accessToken; // còn >2 phút thì dùng luôn
 
-    if (!u.refreshToken) throw reauth(openId, u.name, 'Không có refresh token — cần đăng nhập lại (thiếu scope offline_access).');
-    if (Date.now() > u.refreshExpiresAt) throw reauth(openId, u.name, 'Refresh token đã quá 7 ngày — cần đăng nhập lại.');
+    return rotate(openId, u);
+  });
+}
 
-    const j = await tokenEndpoint({ grant_type: 'refresh_token', refresh_token: u.refreshToken });
-    if (!j.access_token) {
-      throw reauth(openId, u.name, `Refresh thất bại (${j.error || '?'}) — cần đăng nhập lại.`);
-    }
-
-    saveUser(openId, {
-      ...u,
-      accessToken: j.access_token,
-      // Lark XOAY refresh token mỗi lần dùng. Phải ghi đè cái mới, nếu không
-      // lần refresh sau sẽ reuse token đã chết và mất session.
-      refreshToken: j.refresh_token || u.refreshToken,
-      accessExpiresAt: Date.now() + (j.expires_in || 7200) * 1000,
-      refreshExpiresAt: j.refresh_token_expires_in
-        ? Date.now() + j.refresh_token_expires_in * 1000
-        : u.refreshExpiresAt,
-      updatedAt: Date.now(),
-    });
-    return j.access_token;
+/**
+ * Xoay token DÙ access token còn hạn — dùng cho lệnh gia hạn chạy tay.
+ *
+ * Vì sao không dùng `getValidAccessToken`: cửa sổ 7 ngày chỉ trượt khi ta THẬT
+ * SỰ gọi token endpoint. Access token sống 2 tiếng, nên gọi một tool bất kỳ
+ * (whoami chẳng hạn) ngay sau một lượt keepalive sẽ dùng lại token còn hạn và
+ * không xoay gì cả: `refreshExpiresAt` đứng nguyên. Một cái nút "gia hạn ngay"
+ * đi đường đó sẽ báo thành công mà hạn không nhích một giờ.
+ *
+ * Đắt hơn một chút (luôn một request tới Lark) nên KHÔNG dùng cho đường tool
+ * call bình thường — chỗ đó cần token còn hạn, không cần token mới.
+ */
+export function forceRefresh(openId) {
+  return withUserLock(openId, async () => {
+    const u = getUser(openId);
+    if (!u) throw reauth(openId, null, 'Chưa đăng nhập Lark.');
+    return rotate(openId, u);
   });
 }

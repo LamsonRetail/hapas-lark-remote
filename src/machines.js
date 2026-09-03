@@ -266,6 +266,85 @@ export function touchMachine({ openId, name, clientId, clientApp }) {
 }
 
 /**
+ * Cập nhật hạn refresh token cho MỌI dòng của một người.
+ *
+ * `upsert` chỉ ghi cột này khi có sự kiện auth hoặc tool call, nên với ai nghỉ
+ * vài ngày thì nó đứng lại ở ảnh chụp cũ: chiều 23/08 dashboard hiện 7 người
+ * "còn 10–41h" trong khi keepalive vừa xoay token cho cả 39 người và store ghi
+ * 168h cho tất cả. Con số DUY NHẤT trên trang đòi hành động trước khi hỏng lại
+ * là con số sai — và sai về phía báo động giả, nên lần báo động thật sẽ bị bỏ
+ * qua cùng với nó.
+ *
+ * Vì vậy MỌI đường xoay token phải công bố lại hạn, không riêng đường tool call.
+ * Trả về Promise để chỗ gọi chờ được: cái nút trên dashboard nạp lại số ngay sau
+ * khi gia hạn, chưa ghi xong thì nó đọc lại đúng con số cũ.
+ *
+ * KHÔNG đụng `last_seen`. Cột đó trả lời "lần cuối người này thật sự có mặt";
+ * để keepalive dập lên mỗi 12h thì cả bảng vĩnh viễn "vừa thấy 2 phút trước" và
+ * không còn cách nào nhìn ra ai đã nghỉ hẳn.
+ */
+export async function publishTokenExpiry(openId) {
+  if (!sbEnabled || !openId) return false;
+  // Bảng chưa có cột thì bỏ hẳn: `send` gỡ field bị từ chối rồi gửi lại, mà gỡ
+  // đúng field DUY NHẤT trong body thì còn lại PATCH rỗng — vô nghĩa và vẫn tốn
+  // một vòng mạng.
+  if (!usableFields().includes('token_expires_at')) return false;
+
+  const exp = getUser(openId)?.refreshExpiresAt;
+  if (!exp) return false;
+
+  const path = `machines?user_id=eq.${encodeURIComponent(openId)}&app_id=eq.${encodeURIComponent(config.appId)}`;
+  const res = await sbFetch(path, {
+    method: 'PATCH',
+    prefer: 'return=minimal',
+    body: { token_expires_at: new Date(exp).toISOString() },
+  });
+  if (res.ok) return true;
+
+  const text = await res.text();
+  // Cột chưa có: noteRejected đã in lời nhắc chạy migration, đừng in thêm.
+  if (!noteRejected(text)) console.error(`[machines] công bố hạn token thất bại ${res.status}: ${text.slice(0, 200)}`);
+  return false;
+}
+
+/**
+ * Đánh dấu phiên Lark của một người đã CHẾT, dù đồng hồ của ta còn thấy hạn.
+ *
+ * Lark từ chối refresh token trong khi `refreshExpiresAt` vẫn còn vài ngày là
+ * chuyện có thật — `invalid_grant`, thường vì người đó bị gỡ quyền app, đổi mật
+ * khẩu, hoặc tenant thu hồi. Đúng cảnh của Trần Thị Vân Anh ngày 26/08/2026:
+ * store ghi còn 129h, DM cảnh báo đã bay đi từ hôm đó, mà dashboard vẫn hiện
+ * "còn 5 ngày" màu xanh vì `token_expires_at` là ảnh chụp của lần xoay cuối.
+ *
+ * Đây là ĐÚNG cái lỗi đã sửa cho `publishTokenExpiry`, chỉ ngược chiều: lần
+ * trước cột đếm ngược báo động giả, lần này nó im lặng trong khi phiên đã chết
+ * — và im lặng thì tệ hơn, vì không ai đi tìm thứ mình không thấy.
+ *
+ * Ghi hạn = BÂY GIỜ. Cột này là timestamp, không chở được lý do; thứ người đọc
+ * bảng cần biết là "người này phải đăng nhập lại", và cả hai đường chết (quá 7
+ * ngày hay Lark từ chối) đều dẫn tới đúng một hành động đó. Lý do nằm ở dòng
+ * `reauth_required` trong audit và ở danh sách `deadNowNames` của nhịp tim.
+ *
+ * Đăng nhập lại thì `recordAuth` ghi đè hạn thật, không cần ai đi dọn tay.
+ */
+export async function publishTokenDead(openId) {
+  if (!sbEnabled || !openId) return false;
+  if (!usableFields().includes('token_expires_at')) return false;
+
+  const path = `machines?user_id=eq.${encodeURIComponent(openId)}&app_id=eq.${encodeURIComponent(config.appId)}`;
+  const res = await sbFetch(path, {
+    method: 'PATCH',
+    prefer: 'return=minimal',
+    body: { token_expires_at: new Date().toISOString() },
+  });
+  if (res.ok) return true;
+
+  const text = await res.text();
+  if (!noteRejected(text)) console.error(`[machines] đánh dấu phiên chết thất bại ${res.status}: ${text.slice(0, 200)}`);
+  return false;
+}
+
+/**
  * Đánh dấu một chỗ cắm đã bị thu hồi. `status` của bảng chỉ nhận
  * active | revoked | inactive (đã kiểm bằng cách thử từng giá trị).
  *
