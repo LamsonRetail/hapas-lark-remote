@@ -485,8 +485,6 @@ const shell = (body) => `<!doctype html><meta charset="utf-8">
  a.btn{display:block;text-align:center;background:#2563eb;color:#fff;padding:13px;border-radius:9px;text-decoration:none;font-weight:600}
  code{font-size:20px;letter-spacing:2px;font-weight:600}
  .muted{color:#888;font-size:13px}
- .warn{background:#fef3c7;border:1px solid #fcd34d;color:#78350f;border-radius:9px;padding:12px 14px;margin:16px 0;font-weight:600}
- @media(prefers-color-scheme:dark){.warn{background:#3a2e0b;border-color:#7c5e10;color:#fde68a}}
  button.btn{display:block;width:100%;background:#2563eb;color:#fff;padding:13px;border:0;border-radius:9px;font:inherit;font-weight:600;cursor:pointer}
 </style>${body}`;
 
@@ -507,13 +505,18 @@ const errPage = (msg) => shell(`<div class="box"><h3>Không kết nối được
  * "duyệt xong xuôi mà vẫn chưa kết nối". Hôm đó 16 lượt mở trang chỉ đổi được
  * 9 token; có máy mở 4 lần trong 2 phút mà không lần nào tới `/token`.
  *
- * Bốn thay đổi, đều nhắm đúng chỗ đó:
- *   1. Nói THẲNG là phải quay lại trang này — chặn cái vòng lặp từ gốc.
- *   2. Xong thì vẫn hiện link bấm tay, phòng khi lệnh chuyển hướng không chạy
+ * Ba thay đổi, đều nhắm đúng chỗ đó:
+ *   1. Xong thì vẫn hiện link bấm tay, phòng khi lệnh chuyển hướng không chạy
  *      (tab nền bị trình duyệt bóp). Trước đây hỏng ở đây là hỏng câm.
- *   3. Hỏi lại NGAY khi tab được nhìn lại, không chờ hết nhịp 2.5s — người dùng
+ *   2. Hỏi lại NGAY khi tab được nhìn lại, không chờ hết nhịp 2.5s — người dùng
  *      quay về là thấy kết quả luôn.
- *   4. Hết hạn thì có nút lấy mã mới, thay vì một dòng chữ bảo tự tải lại.
+ *   3. Hết hạn thì có nút lấy mã mới, thay vì một dòng chữ bảo tự tải lại.
+ *
+ * ĐÃ CÓ một khung cảnh báo vàng dặn phải quay lại trang này, nhắm thẳng vào
+ * nguyên nhân gốc. Bỏ đi theo yêu cầu ngày 03/09/2026: nó làm người dùng hiểu
+ * nhầm là có gì đó sai, trong khi luồng bình thường chỉ mất ~13 giây nên hiếm
+ * ai kịp đi lạc. Nếu tỉ lệ /authorize so với /token tụt lại thì đây là thứ đầu
+ * tiên nên cân nhắc đưa về, dưới dạng một dòng chữ nhạt thay vì khung vàng.
  *
  * Vòng poll giữ nguyên: nó đã chạy đúng qua 98 lượt đăng nhập thành công, không
  * có lý do gì đụng vào.
@@ -526,7 +529,6 @@ const loginPage = (flowId, url, userCode) =>
   <a class="btn" href="${url}" target="_blank" rel="noopener">Đăng nhập Lark</a>
   <p style="text-align:center;margin:16px 0 0">Mã xác nhận: <code>${userCode}</code></p>
 </div>
-<div class="warn">Duyệt xong trên Lark, hãy QUAY LẠI TRANG NÀY. Đừng quay về Claude và bấm Connect lại — làm vậy sẽ tạo mã mới và lần duyệt vừa rồi bị bỏ.</div>
 <p id="s" class="muted">Đang chờ bạn duyệt trên Lark…</p>
 <div id="done" style="display:none">
   <a class="btn" id="go" href="#">Quay lại Claude</a>
