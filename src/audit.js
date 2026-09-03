@@ -1,3 +1,5 @@
+import fs from 'node:fs';
+import path from 'node:path';
 import { config } from './config.js';
 import { sbEnabled, sbFetch } from './supabase.js';
 
@@ -56,6 +58,40 @@ function post(rows) {
   return sbFetch('audit_logs', { method: 'POST', body, prefer: 'return=minimal' });
 }
 
+/**
+ * Ổ chứa tạm khi Supabase không nhận.
+ *
+ * Trước đây lô gửi hỏng là VỨT THẲNG: in một dòng `ghi thất bại` rồi đi tiếp.
+ * Chấp nhận được với sự cố vài giây, nhưng ngày 02/09/2026 Supabase khoá dự án
+ * vì `exceed_egress_quota` và trạng thái đó kéo dài NHIỀU NGÀY — mọi bản ghi
+ * trong khoảng ấy mất sạch. Đúng lúc Nguyễn Thùy Chi báo lỗi thì không còn gì
+ * để tra: ai gọi, gọi tool nào, hỏng ở đâu, tất cả đã bị vứt.
+ *
+ * NDJSON nối đuôi: rẻ, không cần parse lại file cũ, và crash giữa chừng chỉ
+ * hỏng đúng dòng cuối. Vẫn giữ nguyên tắc số 1 — hỏng ở đây tuyệt đối không
+ * được làm hỏng tool call, nên toàn bộ nằm trong try/catch câm.
+ */
+const SPILL = path.join(config.dataDir, 'audit-spill.ndjson');
+const SPILL_MAX = 20 * 1024 * 1024;
+let spilled = 0;
+
+function spill(rows, why) {
+  try {
+    if (fs.existsSync(SPILL) && fs.statSync(SPILL).size > SPILL_MAX) {
+      fs.renameSync(SPILL, SPILL + '.prev');
+    }
+    const at = new Date().toISOString();
+    fs.appendFileSync(SPILL, rows.map((r) => JSON.stringify({ _spilled_at: at, _why: why, ...r })).join('\n') + '\n');
+    spilled += rows.length;
+    // Mỗi lô một dòng log thì 402 kéo dài sẽ ngập màn hình. Báo theo mốc.
+    if (spilled === rows.length || spilled % 200 < rows.length) {
+      console.error(`[audit] đã dồn ${spilled} bản ghi vào ${SPILL} — nạp lại khi Supabase sống lại`);
+    }
+  } catch (e) {
+    console.error(`[audit] không ghi được file dự phòng: ${e.message}`);
+  }
+}
+
 async function flush() {
   timer = null;
   if (!queue.length) return;
@@ -73,11 +109,81 @@ async function flush() {
       text = res.ok ? '' : await res.text();
     }
 
-    if (!res.ok) console.error(`[audit] ghi thất bại ${res.status}: ${text.slice(0, 200)}`);
+    if (!res.ok) {
+      console.error(`[audit] ghi thất bại ${res.status}: ${text.slice(0, 200)}`);
+      spill(batch, `http ${res.status}`);
+    } else {
+      await drainSpill();
+    }
   } catch (e) {
     console.error(`[audit] ghi thất bại: ${e.message}`);
+    spill(batch, e.message);
   }
   if (queue.length) schedule();
+}
+
+/**
+ * Đẩy lại những gì đã dồn ra đĩa, mỗi lượt một ít.
+ *
+ * CHỈ chạy ngay sau một lần gửi THÀNH CÔNG. Thử nạp lại trong lúc Supabase còn
+ * chết chỉ tạo thêm lượt hỏng rồi ghi đè lại chính file đó — vòng lặp vô ích và
+ * mỗi vòng là một cơ hội làm rách file.
+ *
+ * Mỗi lượt một lô: sự cố kéo dài có thể dồn hàng chục nghìn dòng, bắn hết một
+ * lần vừa dễ bị chặn tốc độ vừa chặn hàng đợi đang chạy. Còn dư thì lượt flush
+ * sau nạp tiếp, tự rút cạn dần.
+ */
+async function drainSpill() {
+  let lines;
+  try {
+    if (!fs.existsSync(SPILL)) return;
+    lines = fs.readFileSync(SPILL, 'utf8').split('\n').filter(Boolean);
+  } catch (e) {
+    console.error(`[audit] không đọc được file dự phòng: ${e.message}`);
+    return;
+  }
+  if (!lines.length) {
+    try { fs.unlinkSync(SPILL); } catch {}
+    return;
+  }
+
+  const take = lines.slice(0, BATCH_MAX);
+  const rows = [];
+  for (const l of take) {
+    // Dòng rách (crash giữa lúc ghi) thì bỏ đúng dòng đó, đừng chặn cả file.
+    try {
+      const { _spilled_at, _why, ...row } = JSON.parse(l);
+      rows.push(row);
+    } catch {}
+  }
+
+  if (rows.length) {
+    let ok = false;
+    try {
+      const res = await post(rows);
+      ok = res.ok;
+      if (!ok) console.error(`[audit] nạp lại thất bại ${res.status} — để dành lượt sau`);
+    } catch (e) {
+      console.error(`[audit] nạp lại thất bại: ${e.message}`);
+    }
+    if (!ok) return; // giữ nguyên file, thử lại lần flush sau
+  }
+
+  // Ghi lại phần còn dư qua file tạm rồi đổi tên — crash giữa chừng không mất.
+  try {
+    const rest = lines.slice(take.length);
+    if (!rest.length) {
+      fs.unlinkSync(SPILL);
+      console.log(`[audit] đã nạp lại xong toàn bộ file dự phòng`);
+    } else {
+      fs.writeFileSync(SPILL + '.tmp', rest.join('\n') + '\n');
+      fs.renameSync(SPILL + '.tmp', SPILL);
+      console.log(`[audit] nạp lại ${rows.length} bản ghi, còn ${rest.length} dòng`);
+    }
+    spilled = Math.max(0, spilled - rows.length);
+  } catch (e) {
+    console.error(`[audit] không cắt được file dự phòng: ${e.message}`);
+  }
 }
 
 function schedule() {
