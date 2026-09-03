@@ -2,7 +2,7 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import express from 'express';
-import { config } from './config.js';
+import { config, publicUrlFor } from './config.js';
 import { startDeviceFlow, pollDeviceFlow, persistTokens } from './lark-auth.js';
 import { deleteUser, getUser } from './store.js';
 import { recordAuth, revokeMachines } from './machines.js';
@@ -208,14 +208,18 @@ export function issueForUser(openId, name = '', clientId = 'local-admin') {
 
 export function buildOAuthRouter() {
   const r = express.Router();
-  const ISS = config.publicUrl;
+
+  // Metadata phải khai ĐÚNG tên miền mà request đi vào, không phải một hằng số.
+  // Nướng cứng `PUBLIC_URL` thì tên miền thứ hai vừa dựng lên đã tự đá người
+  // dùng ngược về tên thứ nhất. Xem `publicUrlFor` trong config.js.
 
   // ── Metadata: Claude đọc hai file này để biết phải đi đâu ────────────────
   // RFC 9728: đường chuẩn là chèn well-known TRƯỚC path của resource, tức
   // `/.well-known/oauth-protected-resource/mcp`. Đường ở gốc chỉ là dự phòng.
   // codex-mcp-client thử cả hai biến thể có hậu tố /mcp trước rồi mới lùi về
   // gốc — nó chạy được nhờ fallback, nhưng client nào không có fallback sẽ tịt.
-  r.get(['/.well-known/oauth-protected-resource', '/.well-known/oauth-protected-resource/mcp'], (_req, res) => {
+  r.get(['/.well-known/oauth-protected-resource', '/.well-known/oauth-protected-resource/mcp'], (req, res) => {
+    const ISS = publicUrlFor(req);
     res.json({
       resource: ISS,
       authorization_servers: [ISS],
@@ -229,7 +233,8 @@ export function buildOAuthRouter() {
       '/.well-known/openid-configuration',
       '/.well-known/openid-configuration/mcp',
     ],
-    (_req, res) => {
+    (req, res) => {
+      const ISS = publicUrlFor(req);
       res.json({
         issuer: ISS,
         authorization_endpoint: `${ISS}/authorize`,

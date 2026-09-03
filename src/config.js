@@ -42,3 +42,47 @@ export const config = {
   // offline_access BẮT BUỘC, thiếu là không có refresh_token
   scopes: (process.env.LARK_SCOPES || 'offline_access').split(/\s+/).filter(Boolean),
 };
+
+/**
+ * Tên miền công khai KHÁC được chấp nhận, ngoài PUBLIC_URL. Phân tách bằng dấu phẩy.
+ *
+ * Có cái này thì mới chạy SONG SONG hai đường vào được. Trước đây toàn bộ OAuth
+ * metadata (`issuer`, `authorization_endpoint`, `token_endpoint`,
+ * `registration_endpoint`) và header `WWW-Authenticate` đều nướng cứng đúng một
+ * giá trị `PUBLIC_URL`. Dựng thêm tên miền thứ hai trỏ vào cùng server thì người
+ * vào bằng tên MỚI lập tức bị metadata đá ngược về tên CŨ — tức vẫn dính đúng
+ * cái DNS đang hỏng, mà hỏng câm, rất khó nhận ra.
+ *
+ * Nhờ vậy mới chuyển dần được: 45 người cũ giữ nguyên URL cũ, người mới dùng URL
+ * mới, cùng một tiến trình, cùng một kho token. Không có ngày cắt.
+ */
+const EXTRA_URLS = (process.env.PUBLIC_URL_ALT || '')
+  .split(',')
+  .map((s) => s.trim().replace(/\/$/, ''))
+  .filter(Boolean);
+
+/** host (kèm cổng) → URL đầy đủ. Chỉ những tên đã KHAI mới có mặt ở đây. */
+const URL_BY_HOST = new Map(
+  [config.publicUrl, ...EXTRA_URLS].map((u) => {
+    try {
+      return [new URL(u).host.toLowerCase(), u];
+    } catch {
+      throw new Error(`PUBLIC_URL_ALT có giá trị không phải URL hợp lệ: ${u}`);
+    }
+  }),
+);
+
+export const publicHosts = [...URL_BY_HOST.keys()];
+
+/**
+ * URL công khai ĐÚNG với tên miền mà request này đi vào.
+ *
+ * Danh sách trắng, KHÔNG tin `Host` một cách mù quáng: ai đó gửi
+ * `Host: evil.com` mà ta cứ thế khai theo là tự trỏ client của mình sang máy
+ * người lạ. Tên lạ thì rơi về `PUBLIC_URL` mặc định.
+ */
+export function publicUrlFor(req) {
+  const raw = req?.headers?.['x-forwarded-host'] || req?.headers?.host || '';
+  const host = String(raw).split(',')[0].trim().toLowerCase();
+  return URL_BY_HOST.get(host) || config.publicUrl;
+}

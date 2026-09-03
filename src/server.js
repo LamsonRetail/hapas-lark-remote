@@ -1,7 +1,7 @@
 import express from 'express';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
-import { config } from './config.js';
+import { config, publicUrlFor } from './config.js';
 import { buildOAuthRouter, resolveBearer } from './oauth-as.js';
 import { getValidAccessToken } from './lark-auth.js';
 import { registerTools, TOOL_COUNT } from './tools/index.js';
@@ -112,7 +112,8 @@ app.post('/mcp', express.json({ limit: '8mb' }), async (req, res) => {
   if (!session || session.kind !== 'access') {
     noteDenied(session, req);
     // Bắt buộc theo spec MCP: chỉ cho Claude biết phải đi đâu để xin quyền
-    res.set('WWW-Authenticate', `Bearer resource_metadata="${config.publicUrl}/.well-known/oauth-protected-resource"`);
+    // Chỉ đúng tên miền mà request này đi vào — xem publicUrlFor trong config.js
+    res.set('WWW-Authenticate', `Bearer resource_metadata="${publicUrlFor(req)}/.well-known/oauth-protected-resource"`);
     return res.status(401).json({
       jsonrpc: '2.0',
       error: { code: -32001, message: 'Chưa xác thực' },
