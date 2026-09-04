@@ -176,7 +176,26 @@ function startCloudflared() {
   });
 }
 
-const startTunnel = () => (PROVIDER === 'tailscale' ? startFunnel() : startCloudflared());
+/**
+ * `TUNNEL=none` — không dựng tunnel, dùng thẳng PUBLIC_URL.
+ *
+ * Dành cho lúc đã có thứ khác lo đường vào từ ngoài: reverse proxy (Caddy,
+ * nginx), hoặc VM có IP công cộng. Tunnel sinh ra để chọc thủng NAT khi server
+ * nằm trong PC văn phòng — chạy sau proxy thì nó thừa.
+ *
+ * VÌ SAO PHẢI KHAI TƯỜNG MINH, không dựa vào fallback: nhánh `if (!CLOUDFLARED)`
+ * trong startCloudflared() là CODE CHẾT. Mảng dò đường dẫn kết thúc bằng chuỗi
+ * trần 'cloudflared' và vị từ có nhánh `p === 'cloudflared'`, nên `.find()`
+ * luôn trả về nó — CLOUDFLARED không bao giờ falsy. Thiếu binary thì không rơi
+ * vào fallback mà chết thẳng bằng `spawn cloudflared ENOENT` (đã dính đúng thế
+ * khi dựng container 04/09/2026).
+ */
+const startTunnel = () =>
+  PROVIDER === 'none'
+    ? Promise.resolve(process.env.PUBLIC_URL || `http://localhost:${process.env.PORT || 8787}`)
+    : PROVIDER === 'tailscale'
+      ? startFunnel()
+      : startCloudflared();
 
 // ── Server ────────────────────────────────────────────────────────────────
 let restarts = 0;

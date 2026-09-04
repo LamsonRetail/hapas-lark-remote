@@ -1,0 +1,77 @@
+# Khối site THÊM vào Caddy của lsr-platform — KHÔNG phải file thay thế.
+#
+# === ĐÃ KHẢO SÁT TRÊN MÁY (04/09/2026) ===
+#
+#   Caddy chạy trong container `lsr-platform-caddy-1`, ảnh tự build
+#   `lsr-platform-caddy` (Caddy v2.11.4, có plugin rate_limit).
+#   File cấu hình trên host : /opt/lsr-platform/caddy/Caddyfile
+#   Bind-mount vào container: /etc/caddy/Caddyfile
+#   Dài 129 dòng. Cấu trúc: global block (8-11), snippet (guard), 4 site,
+#   snippet (console). KHÔNG có `import` kiểu thư mục drop-in — nên bắt buộc
+#   nối thẳng vào file, không có đường sạch hơn.
+#   Global block có `email` và KHÔNG có `auto_https off` => site mới tự xin
+#   được chứng chỉ Let's Encrypt.
+#
+# === VÌ SAO reverse_proxy TRỎ VÀO TÊN CONTAINER, KHÔNG PHẢI 127.0.0.1 ===
+#
+#   Caddy nằm TRONG container. `127.0.0.1:8787` với nó là localhost của chính
+#   container Caddy, không phải của máy — sẽ không bao giờ tới được server.
+#   Tệ hơn: sai kiểu này KHÔNG báo lỗi lúc nạp config, chỉ 502 khi có người
+#   dùng thật.
+#   Cho container server chạy chung network `lsr-platform_default` thì Caddy
+#   phân giải được thẳng bằng tên. Sạch, không cần IP bridge.
+#
+# === CÁCH THÊM ===
+#
+#   1. Sao lưu trước:
+#        sudo cp /opt/lsr-platform/caddy/Caddyfile \
+#                /opt/lsr-platform/caddy/Caddyfile.bak.$(date +%F-%H%M)
+#
+#   2. Nối khối dưới vào CUỐI file (sau dòng 129). Đừng chèn vào giữa, đừng
+#      sửa 4 site đang chạy.
+#
+#   3. Kiểm cú pháp TRƯỚC khi nạp — không được bỏ bước này, sai cú pháp là
+#      Caddy từ chối nạp và 4 site kia có thể chết theo:
+#        sudo docker exec lsr-platform-caddy-1 \
+#             caddy validate --config /etc/caddy/Caddyfile
+#
+#   4. Nạp nóng — `reload`, TUYỆT ĐỐI KHÔNG `restart`:
+#        sudo docker exec lsr-platform-caddy-1 \
+#             caddy reload --config /etc/caddy/Caddyfile
+#      `reload` không rớt kết nối nào của agent.hapas-ai.tech và các site kia.
+#      `restart` container thì có.
+#
+# === ĐIỀU KIỆN TIÊN QUYẾT ===
+#
+#   Bản ghi A `mcp.hapas.vn` -> 34.124.212.76 phải LAN XONG trước khi reload.
+#   Chưa có DNS mà Caddy thử xin chứng chỉ là trượt, mà Let's Encrypt giới hạn
+#   số lần thất bại — trượt nhiều lần là bị khoá vài tiếng, ngồi chờ không làm
+#   gì được.
+#
+# === LƯU Ý ===
+#
+#   KHÔNG dùng snippet `guard` của họ ở đây. Server này tự làm OAuth và tự
+#   xác thực bearer token; thêm một lớp chặn nữa ở trước là Claude không
+#   hoàn tất được luồng đăng nhập.
+
+mcp.hapas.vn {
+	reverse_proxy lark-mcp-remote:8787 {
+		# Không cần cấu hình header IP: server nhận diện người gọi bằng bearer
+		# token chứ không bằng địa chỉ, nên access log vẫn ghi đúng tên người
+		# dù đứng sau proxy. (Đã kiểm: `src/` không đọc X-Real-IP hay
+		# X-Forwarded-For ở đâu cả.)
+
+		# Server có keepalive dài và tự đo đường vào từ ngoài; đừng để proxy
+		# cắt sớm hơn chính nó.
+		transport http {
+			read_timeout 120s
+			write_timeout 120s
+		}
+	}
+
+	encode gzip
+
+	# Không khai `log` ra file: trong container thư mục /var/log/caddy có thể
+	# không tồn tại hoặc không được mount, khai bừa là Caddy lỗi lúc nạp. Mặc
+	# định Caddy ghi ra stdout, `docker logs lsr-platform-caddy-1` đọc được.
+}

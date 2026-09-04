@@ -1,0 +1,59 @@
+# Compose project RIÊNG, đặt ở /opt/lark-mcp-remote/ — cố ý nằm NGOÀI
+# /opt/lsr-platform/ để lần deploy sau của anh Thiện không ghi đè lên.
+#
+# !!! FILE NÀY PHẢI NẰM Ở GỐC PROJECT, tức /opt/lark-mcp-remote/docker-compose.yml
+# chứ KHÔNG phải trong deploy/. Lý do: đường dẫn tương đối ở `volumes` được
+# tính theo thư mục chứa compose file. Để trong deploy/ thì `./.env` trỏ tới
+# /opt/lark-mcp-remote/deploy/.env — sai chỗ, và container sẽ khởi động với
+# .env rỗng rồi chết vì thiếu LARK_APP_ID.
+#
+# Chạy:
+#   cd /opt/lark-mcp-remote
+#   docker compose up -d --build
+#
+# Dừng CHỈ dịch vụ này, không đụng ai:
+#   docker compose down
+
+services:
+  lark-mcp-remote:
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile
+    image: lark-mcp-remote
+    # Tên khác hẳn `lark-mcp-http` đang chạy sẵn của anh Thiện — không đụng.
+    container_name: lark-mcp-remote
+    restart: unless-stopped
+
+    # Chạy dưới uid/gid của mcp-deploy trên host (1007:1008). Nhờ vậy file
+    # trong .data/ đẻ ra vẫn thuộc mcp-deploy, không thành root — đỡ phải
+    # sudo mỗi lần xem log hay sao lưu, và không leo quyền được.
+    user: "1007:1008"
+
+    volumes:
+      # :ro — container không cần ghi vào .env, khoá lại cho chắc.
+      - ./.env:/app/.env:ro
+      # Kho token + audit spill + log. Đây là thứ DUY NHẤT phải sao lưu.
+      - ./.data:/app/.data
+
+    # KHÔNG có `ports:` — cố ý.
+    #
+    # Publish 8787 ra host là mở thêm một cửa vào internet (GCP đã mở sẵn
+    # firewall cho máy này). Không publish thì server chỉ tồn tại bên trong
+    # network Docker, và CHỈ Caddy gọi tới được. Ít cửa hơn, an toàn hơn.
+
+    networks:
+      - lsr-platform_default
+
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "5"
+
+networks:
+  # `external: true` = dùng network CÓ SẴN của lsr-platform, KHÔNG tạo mới và
+  # KHÔNG sửa gì của họ. Nhờ chung network mà Caddy gọi được bằng tên container
+  # (`lark-mcp-remote:8787`) — tránh sạch cái bẫy `127.0.0.1` trỏ vào localhost
+  # của chính container Caddy chứ không phải của host.
+  lsr-platform_default:
+    external: true
