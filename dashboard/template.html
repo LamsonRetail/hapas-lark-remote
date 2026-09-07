@@ -63,6 +63,16 @@
         <select id="f-tool" class="mini" aria-label="Lọc theo tool"></select>
       </div>
 
+      <!-- Hai ô này TRƯỚC ĐÂY nằm trong thẻ biểu đồ lớn, tức trang có hai chỗ
+           điều khiển ở hai nơi. Dồn về đây để chỉ còn MỘT thanh: bốn ô đầu lọc
+           dữ liệu, hai ô này chọn góc nhìn của khu chi tiết. Cùng một hàng,
+           cùng một chỗ mắt tìm. -->
+      <div class="fb-grp fb-view">
+        <span class="fb-lb">Chi tiết theo</span>
+        <select id="f-dim" class="mini" aria-label="Nhóm biểu đồ chi tiết theo"></select>
+        <select id="f-measure" class="mini" aria-label="Đo bằng"></select>
+      </div>
+
       <span class="spacer"></span>
       <button type="button" class="btn ghost" id="f-reset" hidden>Bỏ lọc</button>
     </div>
@@ -158,16 +168,6 @@
       <span class="spacer"></span>
       <span class="seg seg-sm" id="f-kind"></span>
     </h2>
-    <div class="cc">
-      <div class="field">
-        <label for="f-dim">Nhóm theo</label>
-        <select id="f-dim"></select>
-      </div>
-      <div class="field">
-        <label for="f-measure">Đo bằng</label>
-        <select id="f-measure"></select>
-      </div>
-    </div>
     <div class="summary" id="summary"></div>
     <div class="legend" id="legend"></div>
     <div id="chart"></div>
@@ -179,7 +179,7 @@
        audit_logs nên không có phép gộp nào dựng lại được chúng. Riêng "Token
        còn" là con số DUY NHẤT trên trang đòi hành động TRƯỚC khi hỏng. -->
   <div class="zone">Chi tiết</div>
-  <section class="card pad">
+  <section class="card pad" id="people-card">
     <h2>
       Người dùng <span class="n" id="people-n"></span>
       <span class="spacer"></span>
@@ -878,13 +878,37 @@
       d: k.blocked ? `${String(k.blockRate).replace('.', ',')}% lượt gọi bị chặn` : 'Không lượt nào bị chặn' },
     // "Đã cắm" là số người ĐĂNG NHẬP được, "đã gọi" là số người thật sự dùng.
     // Chênh lệch giữa hai số là thứ cần biết khi vừa phát link cho phòng ban.
-    { k: 'Người đã cắm', v: nf(k.connected ?? k.users), d: `${nf(k.users)} người đã gọi tool` },
+    // Bấm vào là nhảy xuống bảng chi tiết từng người. Con số này luôn làm người
+    // đọc muốn hỏi "44 ai?" — mà câu trả lời nằm sẵn ở cuối trang, chỉ thiếu
+    // đường dẫn tới.
+    { k: 'Người đã cắm', v: nf(k.connected ?? k.users), d: `${nf(k.users)} người đã gọi tool`,
+      go: 'people-card', goLabel: 'xem từng người' },
     { k: 'Độ trễ p95', v: ms(k.p95), d: 'trung vị ' + ms(k.p50) },
     { k: 'Tool đã dùng', v: `${k.toolsUsed}<small>/${k.toolsTotal}</small>`, d: `${D.unused.length} chưa ai gọi` },
-  ].map((t) => `<div class="card kpi${t.hero ? ' hero' : ''}">
+  ].map((t) => `<div class="card kpi${t.hero ? ' hero' : ''}${t.go ? ' kpi-go" role="button" tabindex="0" data-go="' + t.go : ''}">
       <div class="k">${esc(t.k)}</div>
       <div class="v num"${t.sev ? ` style="color: var(--${t.sev})"` : ''}>${t.v}</div>
-      <div class="d">${esc(t.d)}</div></div>`).join(''));
+      <div class="d">${esc(t.d)}${t.go ? ` <span class="kpi-arrow">${esc(t.goLabel)} →</span>` : ''}</div></div>`).join(''));
+
+  /**
+   * Bấm KPI có `data-go` là cuộn xuống khu tương ứng và nháy viền một nhịp.
+   * Chỉ cuộn thì người dùng không biết mình vừa được đưa tới đâu — nhất là khi
+   * khu đích đã nằm trong khung nhìn và cuộn không tạo chuyển động nào.
+   */
+  for (const el of document.querySelectorAll('.kpi-go')) {
+    const go = () => {
+      const t = $(el.dataset.go);
+      if (!t) return;
+      t.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      t.classList.remove('flash');
+      // Đọc offsetWidth để buộc trình duyệt tính lại layout, nếu không thì gỡ
+      // rồi gắn lại class ngay trong một khung hình sẽ không chạy lại animation.
+      void t.offsetWidth;
+      t.classList.add('flash');
+    };
+    el.addEventListener('click', go);
+    el.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); go(); } });
+  }
 
   // ── người dùng ───────────────────────────────────────────────────────
   // Cột "Không dùng được" CHỈ hiện khi có người thật sự bị chặn. Một cột toàn

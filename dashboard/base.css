@@ -487,3 +487,20 @@ h2 .seg-sm { align-self: center; }
 .p-c .clickable { cursor: pointer; }
 .p-c .clickable:hover rect,
 .p-c .clickable:hover circle { opacity: .72; }
+
+/* ── KPI bấm được ─────────────────────────────────────────────────────────
+   Chỉ KPI nào có chỗ để đi mới đổi con trỏ. Con số "44 người đã cắm" luôn
+   khiến người đọc muốn hỏi "44 ai?", mà câu trả lời nằm sẵn ở cuối trang.   */
+.kpi-go { cursor: pointer; }
+.kpi-go:hover { border-color: var(--ink-3); }
+.kpi-go:focus-visible { outline: 2px solid var(--ink-2); outline-offset: 2px; }
+.kpi-arrow { color: var(--ink-3); white-space: nowrap; }
+
+/* Nháy viền một nhịp ở khu đích. Chỉ cuộn thì người dùng không biết mình vừa
+   được đưa tới đâu — nhất là khi khu đích đã nằm trong khung nhìn sẵn.        */
+@keyframes flash-ring { from { box-shadow: 0 0 0 2px var(--ink-2); } to { box-shadow: 0 0 0 2px transparent; } }
+.flash { animation: flash-ring 1.1s ease-out 1; }
+
+/* Hai ô "Chi tiết theo" dồn từ thẻ biểu đồ về thanh lọc — tách nhẹ khỏi bốn ô
+   lọc dữ liệu bằng một vạch, vì chúng làm việc khác: chọn góc nhìn, không lọc. */
+.fb-view { border-left: 1px solid var(--hairline); padding-left: 12px; }
