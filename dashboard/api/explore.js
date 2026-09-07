@@ -1,7 +1,7 @@
 import { sb, requireSupabase } from '../sb.mjs';
 import { DIM_BY_KEY } from '../explore-schema.mjs';
 import { resolveRange } from '../range.mjs';
-import { EXPLORE_COLS, aggregate } from '../explore-compute.mjs';
+import { EXPLORE_COLS, aggregate, aggregateMany } from '../explore-compute.mjs';
 
 /**
  * Gộp số audit_logs theo MỘT cột do người xem chọn.
@@ -19,8 +19,21 @@ import { EXPLORE_COLS, aggregate } from '../explore-compute.mjs';
 export default async function handler(req, res) {
   if (!requireSupabase(res)) return;
 
-  const dim = DIM_BY_KEY.get(String(req.query?.dim || 'tool_name'));
-  if (!dim) return res.status(400).json({ error: 'Cột không hợp lệ.' });
+  /**
+   * `dims=a,b,c` — gộp nhiều cột trong MỘT lượt, cho trang bày nhiều biểu đồ
+   * cùng lúc mà chỉ đọc Supabase một lần. `dim=a` (số ít) vẫn nhận, vì
+   * build.mjs và bản preview tĩnh đang dùng nó.
+   *
+   * Trần 6 cột đúng bằng số cột trong DIMENSIONS: không phải con số tuỳ tiện mà
+   * là "gộp hết những gì gộp được", nên không ai gửi được danh sách dài vô hạn
+   * để bắt hàm serverless chạy lâu.
+   */
+  const many = String(req.query?.dims || '').split(',').map((s) => s.trim()).filter(Boolean).slice(0, 6);
+  const bad = many.find((k) => !DIM_BY_KEY.has(k));
+  if (bad) return res.status(400).json({ error: `Cột không hợp lệ: ${bad}` });
+
+  const dim = many.length ? null : DIM_BY_KEY.get(String(req.query?.dim || 'tool_name'));
+  if (!many.length && !dim) return res.status(400).json({ error: 'Cột không hợp lệ.' });
 
   /**
    * Khoảng đến từ query string. resolveRange kẹp biên (không quá hôm nay, không
@@ -38,6 +51,8 @@ export default async function handler(req, res) {
   // lọc của PostgREST lại dùng đúng hai ký tự đó làm dấu phân cách.
   const user = String(req.query?.user || '').slice(0, 200);
   const app = String(req.query?.app || '').slice(0, 80);
+  // Cùng lý do trên: khớp chính xác ở phía máy chủ, không ghép vào PostgREST.
+  const tool = String(req.query?.tool || '').slice(0, 120);
 
   const { since, until } = range;
   // Chốt cứng source='url': chỉ theo dõi MCP remote. Bản zip ghi chung bảng
@@ -99,7 +114,9 @@ export default async function handler(req, res) {
     res.json({
       generatedAt: new Date().toISOString(),
       range: { from: range.from, to: range.to, preset: range.preset, days: range.days, clamped: range.clamped },
-      ...aggregate({ rows, dim: dim.key, include, user, app }),
+      ...(many.length
+        ? aggregateMany({ rows, dims: many, include, user, app, tool })
+        : aggregate({ rows, dim: dim.key, include, user, app, tool })),
     });
   } catch (e) {
     res.status(502).json({ error: e.message });

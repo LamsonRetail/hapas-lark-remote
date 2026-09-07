@@ -24,10 +24,48 @@ export const SKIP_CLIENTS = new Set(['local-admin', 'canary', 'revoke-test-a']);
  */
 export const EXPLORE_COLS = ['created_at', 'tool_name', 'user_name', 'client_id', 'ok', 'duration_ms', 'lark_code', 'source', 'args', 'client_app'];
 
-export function aggregate({ rows, dim: dimKey, include = 'tools', user = '', app = '' }) {
+/**
+ * Gộp theo NHIỀU cột trong một lượt.
+ *
+ * Vì sao đáng tách ra: việc đắt tiền ở đây là ĐỌC hàng từ Supabase và tính
+ * `impactedSet` — gộp thêm một cột nữa chỉ là một vòng lặp trên tập đã nằm sẵn
+ * trong bộ nhớ. Trang mới bày 8 biểu đồ cùng lúc; gọi 8 lượt thì mỗi lượt đọc
+ * lại toàn bộ hàng, tức trả giá đọc 8 lần cho cùng một tập dữ liệu.
+ *
+ * Chuyện này không phải tối ưu sớm: Supabase vừa bị khoá vì `exceed_egress_quota`
+ * ở mức 344% hạn mức, và dashboard chính là bên đọc nhiều nhất.
+ */
+export function aggregateMany({ rows, dims, include = 'tools', user = '', app = '', tool = '' }) {
+  const list = dims.map((k) => {
+    const d = DIM_BY_KEY.get(k);
+    if (!d) throw new Error(`Cột không hợp lệ: ${k}`);
+    return d;
+  });
+  const shared = prepare({ rows, include, user, app, tool });
+  const byDim = {};
+  for (const d of list) byDim[d.key] = groupOne(d, shared);
+  return {
+    include, user, app, tool,
+    users: shared.users, apps: shared.apps, tools: shared.toolNames,
+    total: shared.kept.length, byDim,
+  };
+}
+
+export function aggregate({ rows, dim: dimKey, include = 'tools', user = '', app = '', tool = '' }) {
   const dim = DIM_BY_KEY.get(dimKey);
   if (!dim) throw new Error(`Cột không hợp lệ: ${dimKey}`);
 
+  const shared = prepare({ rows, include, user, app, tool });
+  const g = groupOne(dim, shared);
+  return {
+    dim: dim.key, include, user, app, tool,
+    users: shared.users, apps: shared.apps, tools: shared.toolNames,
+    total: shared.kept.length - g.skipped, skipped: g.skipped, groups: g.rows.length, rows: g.rows,
+  };
+}
+
+/** Phần đắt tiền, làm ĐÚNG MỘT LẦN dù sau đó gộp theo bao nhiêu cột. */
+function prepare({ rows, include = 'tools', user = '', app = '', tool = '' }) {
   const inScope = rows.filter((r) => {
     if (SKIP_CLIENTS.has(r.client_id)) return false;
     if (include === 'all') return true;
@@ -44,10 +82,15 @@ export function aggregate({ rows, dim: dimKey, include = 'tools', user = '', app
    */
   const users = [...new Set(inScope.map((r) => r.user_name).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'vi'));
   const apps = [...new Set(inScope.map((r) => r.client_app).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'vi'));
+  // Tool cũng vào danh sách lọc: câu hay phải hỏi nhất khi có người báo lỗi là
+  // "tool X hỏng với riêng ai", mà trước đây không lọc theo tool được.
+  const toolNames = [...new Set(inScope.map((r) => r.tool_name).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'vi'));
 
   // Nhóm theo tool + lọc một người = "người này đã gọi những tool nào" — mức
   // bóc tách thứ hai mà một cột nhóm đơn lẻ không trả lời được.
-  const kept = inScope.filter((r) => (!user || r.user_name === user) && (!app || r.client_app === app));
+  const kept = inScope.filter((r) => (!user || r.user_name === user)
+    && (!app || r.client_app === app)
+    && (!tool || r.tool_name === tool));
 
   /**
    * Tính trên inScope chứ không trên `kept`: luật "được cứu" cần lượt thành
@@ -56,6 +99,11 @@ export function aggregate({ rows, dim: dimKey, include = 'tools', user = '', app
    */
   const blocked = impactedSet(inScope);
 
+  return { users, apps, toolNames, kept, blocked };
+}
+
+/** Phần rẻ: gộp tập đã chuẩn bị theo đúng một cột. Gọi lại nhiều lần thoải mái. */
+function groupOne(dim, { kept, blocked }) {
   /** Nhãn nhóm. `ok` là boolean, `lark_code` hay null — cả hai cần chữ, không phải "null"/"false". */
   const keyOf = (r) => {
     // Ngày/giờ cắt theo GIỜ VN, không theo UTC — xem ghi chú TZ ở range.mjs.
@@ -105,8 +153,5 @@ export function aggregate({ rows, dim: dimKey, include = 'tools', user = '', app
   // lượt gọi để cái đáng nhìn nằm trên đầu.
   out.sort(dim.time ? (a, b) => a.key.localeCompare(b.key) : (a, b) => b.calls - a.calls);
 
-  return {
-    dim: dim.key, include, user, app, users, apps,
-    total: kept.length - skipped, skipped, groups: out.length, rows: out,
-  };
+  return { skipped, rows: out };
 }

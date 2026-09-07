@@ -465,3 +465,25 @@ h2 .seg-sm { align-self: center; }
    thứ duy nhất trên trang không nghe theo bộ lọc, và một ngoại lệ không được
    nói ra sẽ bị đọc thành lỗi. */
 .rt-note { font-size: var(--fs-2); color: var(--ink-3); margin: -10px 2px 0; }
+
+/* ── Tám biểu đồ cố định ──────────────────────────────────────────────────
+   Lưới tự co: rộng thì hai bảng một hàng, hẹp thì xuống dòng. Không đặt số cột
+   cứng — dashboard này mở trên cả màn hình rộng lẫn laptop 13".               */
+.panels { display: grid; grid-template-columns: repeat(auto-fit, minmax(420px, 1fr)); gap: 12px; }
+.panels .panel h2 { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+
+/* Câu hỏi mà bảng này trả lời. Nhạt hơn tiêu đề vì nó là chú thích, không phải
+   nhãn — nhưng vẫn phải đọc được, đó là thứ nói cho người xem biết nhìn vào đâu. */
+.p-q { font-size: var(--fs-2); color: var(--ink-3); font-weight: 400; font-style: italic; }
+
+.p-grid { display: grid; grid-template-columns: 1fr; gap: 14px; }
+.p-t { font-size: var(--fs-2); color: var(--ink-2); margin-bottom: 6px; }
+.p-c { min-height: 40px; }
+.p-c svg { width: 100%; display: block; }
+.p-empty { font-size: var(--fs-2); color: var(--ink-3); padding: 14px 0; }
+
+/* Chỉ cột nào bấm được mới đổi con trỏ — day/hour/ok không có ô lọc tương ứng
+   nên không được giả vờ bấm được. */
+.p-c .clickable { cursor: pointer; }
+.p-c .clickable:hover rect,
+.p-c .clickable:hover circle { opacity: .72; }

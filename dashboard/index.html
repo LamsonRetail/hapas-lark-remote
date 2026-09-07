@@ -470,6 +470,28 @@ h2 .seg-sm { align-self: center; }
    thứ duy nhất trên trang không nghe theo bộ lọc, và một ngoại lệ không được
    nói ra sẽ bị đọc thành lỗi. */
 .rt-note { font-size: var(--fs-2); color: var(--ink-3); margin: -10px 2px 0; }
+
+/* ── Tám biểu đồ cố định ──────────────────────────────────────────────────
+   Lưới tự co: rộng thì hai bảng một hàng, hẹp thì xuống dòng. Không đặt số cột
+   cứng — dashboard này mở trên cả màn hình rộng lẫn laptop 13".               */
+.panels { display: grid; grid-template-columns: repeat(auto-fit, minmax(420px, 1fr)); gap: 12px; }
+.panels .panel h2 { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+
+/* Câu hỏi mà bảng này trả lời. Nhạt hơn tiêu đề vì nó là chú thích, không phải
+   nhãn — nhưng vẫn phải đọc được, đó là thứ nói cho người xem biết nhìn vào đâu. */
+.p-q { font-size: var(--fs-2); color: var(--ink-3); font-weight: 400; font-style: italic; }
+
+.p-grid { display: grid; grid-template-columns: 1fr; gap: 14px; }
+.p-t { font-size: var(--fs-2); color: var(--ink-2); margin-bottom: 6px; }
+.p-c { min-height: 40px; }
+.p-c svg { width: 100%; display: block; }
+.p-empty { font-size: var(--fs-2); color: var(--ink-3); padding: 14px 0; }
+
+/* Chỉ cột nào bấm được mới đổi con trỏ — day/hour/ok không có ô lọc tương ứng
+   nên không được giả vờ bấm được. */
+.p-c .clickable { cursor: pointer; }
+.p-c .clickable:hover rect,
+.p-c .clickable:hover circle { opacity: .72; }
 </style>
 
 <div class="wrap" id="wrap">
@@ -525,6 +547,14 @@ h2 .seg-sm { align-self: center; }
         <select id="f-app" class="mini" aria-label="Lọc theo ứng dụng"></select>
       </div>
 
+      <!-- Tool là chiều lọc hay cần nhất khi có người báo lỗi: "tool X hỏng với
+           riêng ai hay với tất cả". Trước đây chỉ nhóm theo tool được, không
+           lọc theo tool được. -->
+      <div class="fb-grp">
+        <span class="fb-lb">Tool</span>
+        <select id="f-tool" class="mini" aria-label="Lọc theo tool"></select>
+      </div>
+
       <span class="spacer"></span>
       <button type="button" class="btn ghost" id="f-reset" hidden>Bỏ lọc</button>
     </div>
@@ -557,6 +587,52 @@ h2 .seg-sm { align-self: center; }
        "Ngày × Lượt gọi" — tức là đúng cái biểu đồ vừa bị bỏ, nằm đúng chỗ mắt
        tìm, chỉ khác là giờ đổi được góc nhìn mà không phải cuộn đi đâu. -->
   <div class="zone">Phân tích</div>
+  <!-- ══ Tầng 3: bốn bảng cố định ═══════════════════════════════════════════
+       Mỗi bảng trả lời ĐÚNG MỘT câu hỏi, và bốn câu phủ hết không gian dữ liệu:
+       nó có chạy tốt không · ai dùng · tool nào · vào lúc nào.
+
+       Khác với khu "Đào sâu" bên dưới (một biểu đồ tự chọn, phải bấm mới thấy
+       từng góc), tám biểu đồ này hiện CÙNG LÚC và cùng đọc một bộ lọc. Bấm vào
+       một cột là đặt bộ lọc — bảy biểu đồ còn lại đổi theo. Đó mới là chỗ biến
+       "nhiều biểu đồ" thành một hệ thống, thay vì tám hình đặt cạnh nhau.
+
+       Tất cả lấy số từ MỘT lời gọi /api/explore?dims=… — xem ghi chú ở
+       explore-compute.mjs về việc vì sao không gọi tám lần.
+  ══════════════════════════════════════════════════════════════════════════ -->
+  <section class="panels" id="panels">
+    <div class="card pad panel" data-panel="health">
+      <h2>Sức khoẻ <span class="p-q">nó có đang chạy tốt không?</span></h2>
+      <div class="p-grid">
+        <div class="p-one"><div class="p-t">Tỉ lệ không dùng được theo ngày</div><div class="p-c" id="p-blockrate-day"></div></div>
+        <div class="p-one"><div class="p-t">Thời gian p95 theo ngày</div><div class="p-c" id="p-p95-day"></div></div>
+      </div>
+    </div>
+
+    <div class="card pad panel" data-panel="usage">
+      <h2>Mức dùng <span class="p-q">ai đang dùng, nhiều hay ít?</span></h2>
+      <div class="p-grid">
+        <div class="p-one"><div class="p-t">Lượt gọi theo ngày</div><div class="p-c" id="p-calls-day"></div></div>
+        <div class="p-one"><div class="p-t">Người gọi nhiều nhất</div><div class="p-c" id="p-calls-user"></div></div>
+      </div>
+    </div>
+
+    <div class="card pad panel" data-panel="tools">
+      <h2>Công cụ <span class="p-q">tool nào chạy nhiều, tool nào hay hỏng?</span></h2>
+      <div class="p-grid">
+        <div class="p-one"><div class="p-t">Lượt gọi theo tool</div><div class="p-c" id="p-calls-tool"></div></div>
+        <div class="p-one"><div class="p-t">Không dùng được theo tool</div><div class="p-c" id="p-blocked-tool"></div></div>
+      </div>
+    </div>
+
+    <div class="card pad panel" data-panel="rhythm">
+      <h2>Nhịp &amp; kênh <span class="p-q">dùng vào lúc nào, qua ứng dụng gì?</span></h2>
+      <div class="p-grid">
+        <div class="p-one"><div class="p-t">Lượt gọi theo giờ trong ngày</div><div class="p-c" id="p-calls-hour"></div></div>
+        <div class="p-one"><div class="p-t">Lượt gọi theo ứng dụng</div><div class="p-c" id="p-calls-app"></div></div>
+      </div>
+    </div>
+  </section>
+
   <section class="card pad" id="chart-card">
     <h2>
       <span id="chart-title">Biểu đồ</span>
@@ -606,6 +682,30 @@ h2 .seg-sm { align-self: center; }
     </h2>
     <div class="scroll"><table class="wide" id="t-rows"></table></div>
     <div id="rows-pager"></div>
+  </section>
+
+  <!-- ══ Bảng tổng — KHÔNG theo bộ lọc ══════════════════════════════════════
+       Gộp mọi chỉ số của cả 6 chiều vào một bảng để xuất ra file.
+
+       CỐ Ý KHÔNG LỌC: đây là bảng để mang số đi chỗ khác, nên nó phải đầy đủ
+       bất kể trên màn hình đang xem góc nào. Đổi lại, số ở đây SẼ KHÔNG KHỚP
+       với các biểu đồ phía trên khi bộ lọc đang bật — nên phải nói thẳng điều
+       đó ngay trên bảng, không để người đọc tự phát hiện.
+
+       NẠP THEO YÊU CẦU, không nạp sẵn: nó cần một lượt đọc Supabase riêng
+       (không dùng lại được lời gọi có lọc). Nạp tự động mỗi lần đổi bộ lọc là
+       nhân đôi egress cho một bảng mà phần lớn thời gian không ai mở — mà
+       Supabase vừa bị khoá vì vượt hạn mức 344%.
+  ══════════════════════════════════════════════════════════════════════════ -->
+  <section class="card pad" id="all-card">
+    <h2>
+      Bảng tổng <span class="n" id="all-n"></span>
+      <span class="spacer"></span>
+      <button class="btn" id="all-load">Nạp bảng tổng</button>
+      <button class="btn" id="all-csv" hidden>Tải CSV</button>
+    </h2>
+    <div class="p-q" id="all-note">Mọi chỉ số của cả 6 chiều, <b>không theo bộ lọc</b> — dùng để xuất file. Nạp riêng nên bấm mới chạy.</div>
+    <div class="scroll"><table class="wide" id="t-all"></table></div>
   </section>
 </div>
 
@@ -730,13 +830,16 @@ h2 .seg-sm { align-self: center; }
    * đổi FILTER là đi mạng hai lần, đổi VIEW là vẽ lại tại chỗ, tức thì. Trộn
    * chung thì sớm muộn một thao tác đáng lẽ tức thì lại chờ một giây.
    */
-  const DEF_FILTER = { preset: SCHEMA.DEFAULT_PRESET, from: '', to: '', user: '', app: '' };
+  const DEF_FILTER = { preset: SCHEMA.DEFAULT_PRESET, from: '', to: '', user: '', app: '', tool: '' };
   const DEF_VIEW = { dim: 'day', measure: 'calls', kind: '' };
   const FILTER = { ...DEF_FILTER };
   const VIEW = { ...DEF_VIEW };
 
   let DATA = null;          // kết quả /api/data gần nhất
-  let EX = null;            // kết quả /api/explore gần nhất
+  let EX = null;            // kết quả /api/explore gần nhất, chiếu về 1 chiều
+  let PANELS = null;        // cùng lời gọi đó nhưng đủ 6 chiều, cho 8 biểu đồ
+  /** Đúng 6 cột trong DIMENSIONS — "gộp hết những gì gộp được" trong một lượt. */
+  const PANEL_DIMS = ['day', 'hour', 'user_name', 'tool_name', 'client_app', 'ok'];
   let toolRank = 'top';     // giữ NGOÀI render, xem canaryOpen
   let canaryOpen = false;   // bảng probe đang mở? giữ qua mỗi lần poll 30s
 
@@ -765,6 +868,7 @@ h2 .seg-sm { align-self: center; }
     else { q.set('from', FILTER.from); q.set('to', FILTER.to); }
     if (FILTER.user) q.set('user', FILTER.user);
     if (FILTER.app) q.set('app', FILTER.app);
+    if (FILTER.tool) q.set('tool', FILTER.tool);
     return q;
   }
 
@@ -867,6 +971,7 @@ h2 .seg-sm { align-self: center; }
     });
     $('f-user').addEventListener('change', (e) => { FILTER.user = e.target.value; applyFilter(); });
     $('f-app').addEventListener('change', (e) => { FILTER.app = e.target.value; applyFilter(); });
+    $('f-tool').addEventListener('change', (e) => { FILTER.tool = e.target.value; applyFilter(); });
     $('f-reset').addEventListener('click', () => { Object.assign(FILTER, DEF_FILTER); applyFilter(); });
     $('f-cal').addEventListener('click', () => (calOpen ? closeCal() : openCal()));
 
@@ -936,7 +1041,7 @@ h2 .seg-sm { align-self: center; }
    */
   function lockGlobalFilters() {
     const why = 'Bản xem trước tĩnh — số đã nướng sẵn cho một khoảng. Chạy `npm run dashboard` để lọc thật.';
-    for (const el of [...$('f-range').children, $('f-cal'), $('f-user'), $('f-app')]) {
+    for (const el of [...$('f-range').children, $('f-cal'), $('f-user'), $('f-app'), $('f-tool')]) {
       el.disabled = true;
       el.title = why;
     }
@@ -961,8 +1066,11 @@ h2 .seg-sm { align-self: center; }
     // tên, vòng poll 30s ập tới ghi đè <option>, danh sách sập ngay dưới tay.
     setHtml($('f-user'), opts(withCur(f.users, FILTER.user), FILTER.user, 'Tất cả mọi người'));
     setHtml($('f-app'), opts(withCur(f.apps, FILTER.app), FILTER.app, 'Tất cả ứng dụng'));
+    // Danh sách tool lấy từ /api/explore (f.tools), không phải /api/data —
+    // cùng nguồn với các biểu đồ nên không bao giờ lệch nhau.
+    setHtml($('f-tool'), opts(withCur(EX?.tools || [], FILTER.tool), FILTER.tool, 'Tất cả tool'));
 
-    const dirty = FILTER.user || FILTER.app || FILTER.preset !== DEF_FILTER.preset;
+    const dirty = FILTER.user || FILTER.app || FILTER.tool || FILTER.preset !== DEF_FILTER.preset;
     $('f-reset').hidden = !dirty || STATIC;
 
     // Dòng ghi chú dưới thanh lọc: chỉ nói khi có gì BẤT NGỜ cần nói.
@@ -985,6 +1093,7 @@ h2 .seg-sm { align-self: center; }
       d ? `${nf(d)} ngày` : '',
       FILTER.user ? `chỉ <b>${esc(cut(FILTER.user, 28))}</b>` : 'tất cả mọi người',
       FILTER.app ? `qua <b>${esc(FILTER.app)}</b>` : '',
+      FILTER.tool ? `tool <b>${esc(cut(FILTER.tool, 28))}</b>` : '',
     ].filter(Boolean).join(' · '));
   }
 
@@ -1430,6 +1539,8 @@ h2 .seg-sm { align-self: center; }
       if (b) { VIEW.kind = b.dataset.v; pushUrl(); drawChart(); }
     });
     $('f-csv').addEventListener('click', downloadCsv);
+    $('all-load').addEventListener('click', loadAll);
+    $('all-csv').addEventListener('click', downloadAllCsv);
   }
 
   function syncChartControls() {
@@ -1448,9 +1559,104 @@ h2 .seg-sm { align-self: center; }
   // đã cắt bao nhiêu — cắt âm thầm thì biểu đồ trông như đã bày hết.
   const MAX_BARS = 25;
 
+  /**
+   * ── Tám biểu đồ cố định ────────────────────────────────────────────────
+   *
+   * Cố ý KHÔNG dùng lại hbar/vbar/line của khu "Đào sâu": hai bên có nhu cầu
+   * khác nhau (bên kia cao, có chú giải, có bảng kèm; bên này nhỏ, gọn, nhiều
+   * cái cạnh nhau), và sửa hàm dùng chung để phục vụ cả hai là cách chắc chắn
+   * làm hỏng cái đang chạy tốt.
+   */
+  const PANEL_SPECS = [
+    { el: 'p-blockrate-day', dim: 'day', measure: 'blockRate', kind: 'line' },
+    { el: 'p-p95-day', dim: 'day', measure: 'p95', kind: 'line' },
+    { el: 'p-calls-day', dim: 'day', measure: 'calls', kind: 'bar' },
+    { el: 'p-calls-user', dim: 'user_name', measure: 'calls', kind: 'hbar' },
+    { el: 'p-calls-tool', dim: 'tool_name', measure: 'calls', kind: 'hbar' },
+    { el: 'p-blocked-tool', dim: 'tool_name', measure: 'blocked', kind: 'hbar' },
+    { el: 'p-calls-hour', dim: 'hour', measure: 'calls', kind: 'bar' },
+    { el: 'p-calls-app', dim: 'client_app', measure: 'calls', kind: 'hbar' },
+  ];
+
+  /** Chiều nào bấm vào thì đặt được bộ lọc nào. `day`/`hour`/`ok` không có ô lọc tương ứng. */
+  const CLICK_TO_FILTER = { user_name: 'user', tool_name: 'tool', client_app: 'app' };
+
+  const PANEL_MAX = 8; // mỗi biểu đồ nhỏ chỉ hiện 8 nhóm lớn nhất
+
+  function drawPanels() {
+    if (!PANELS?.byDim) return;
+    for (const s of PANEL_SPECS) {
+      const box = $(s.el);
+      if (!box) continue;
+      // Tra THẲNG trong MEASURES, không qua measureOf(): hàm đó lọc theo
+      // VIEW.dim của khu "Dao sau", khong lien quan gi toi chieu cua bang nay.
+      const me = MEASURES.find((m) => m.key === s.measure), dim = dimOf(s.dim);
+      const all = (PANELS.byDim[s.dim]?.rows || [])
+        .filter((r) => r[me.key] != null && (me.zeroable || r[me.key] > 0));
+      // Trục thời gian giữ thứ tự thời gian; cột phân loại xếp theo chính phép
+      // đo đang xem, không phải theo lượt gọi.
+      const rows = dim.time ? all : all.slice().sort((a, b) => b[me.key] - a[me.key]).slice(0, PANEL_MAX);
+
+      if (!rows.length) { setHtml(box, '<div class="p-empty">Không có số liệu</div>'); continue; }
+      setHtml(box, miniChart(rows, me, dim, s.kind));
+
+      const fkey = CLICK_TO_FILTER[s.dim];
+      if (!fkey) continue;
+      box.querySelectorAll('[data-k]').forEach((el) => {
+        el.classList.add('clickable');
+        el.addEventListener('click', () => {
+          // Bấm lại đúng giá trị đang lọc = bỏ lọc. Không có đường này thì
+          // người dùng phải đi tìm ô chọn để thoát ra.
+          FILTER[fkey] = FILTER[fkey] === el.dataset.k ? '' : el.dataset.k;
+          applyFilter();
+        });
+      });
+    }
+  }
+
+  /** SVG nhỏ gọn: ngang cho nhãn dài, dọc cho trục thời gian, đường cho tỉ lệ/p95. */
+  function miniChart(rows, me, dim, kind) {
+    const W = 1000, max = Math.max(...rows.map((r) => r[me.key]), 0) || 1;
+    const lab = (r) => esc(cut(String(r.key), 26));
+    const tip = (r) => esc(`${r.key} — ${fmt(r[me.key], me.fmt)} · ${r.calls} lượt`);
+
+    if (kind === 'hbar') {
+      const rowH = 26, LW = 300, PR = 110, track = W - LW - PR;
+      return `<svg viewBox="0 0 ${W} ${rows.length * rowH + 4}" preserveAspectRatio="xMinYMin meet">` + rows.map((r, i) => {
+        const y = i * rowH + 3, w = Math.max(2, (r[me.key] / max) * track);
+        return `<g data-k="${esc(String(r.key))}"><title>${tip(r)}</title>`
+          + `<text x="0" y="${y + 13}" font-size="13" fill="var(--ink-2)"${dim.mono ? ' class="mono"' : ''}>${lab(r)}</text>`
+          + `<rect x="${LW}" y="${y + 2}" width="${w}" height="14" rx="4" fill="${me.key === 'blocked' ? 'var(--critical)' : 'var(--good)'}"/>`
+          + `<text x="${LW + w + 8}" y="${y + 13}" font-size="12.5" fill="var(--ink-2)">${esc(fmt(r[me.key], me.fmt))}</text></g>`;
+      }).join('') + '</svg>';
+    }
+
+    const H = 150, PB = 22, plot = H - PB;
+    if (kind === 'bar') {
+      const bw = W / rows.length;
+      return `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">` + rows.map((r, i) => {
+        const h = Math.max(1, (r[me.key] / max) * (plot - 6)), x = i * bw;
+        return `<g data-k="${esc(String(r.key))}"><title>${tip(r)}</title>`
+          + `<rect x="${x + 1}" y="${plot - h}" width="${Math.max(1, bw - 2)}" height="${h}" rx="2" fill="var(--good)"/></g>`;
+      }).join('') + '</svg>';
+    }
+
+    // Đường: điểm cách đều, nối bằng polyline. Dùng cho tỉ lệ và p95 — hai thứ
+    // đọc theo XU HƯỚNG chứ không theo độ lớn từng cột.
+    const step = rows.length > 1 ? W / (rows.length - 1) : 0;
+    const pts = rows.map((r, i) => `${i * step},${(plot - (r[me.key] / max) * (plot - 6)).toFixed(1)}`).join(' ');
+    return `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">`
+      + `<polyline points="${pts}" fill="none" stroke="var(--accent, var(--good))" stroke-width="2.5"/>`
+      + rows.map((r, i) => `<g data-k="${esc(String(r.key))}"><title>${tip(r)}</title>`
+        + `<circle cx="${i * step}" cy="${(plot - (r[me.key] / max) * (plot - 6)).toFixed(1)}" r="3.5" fill="var(--accent, var(--good))"/></g>`).join('')
+      + '</svg>';
+  }
+
   function drawChart() {
     if (!EX) return;
     syncChartControls();
+    drawPanels();
+    allNote();
 
     const dim = dimOf(VIEW.dim), me = measureOf(VIEW.measure), kind = kindNow();
     const val = (r) => r[me.key];
@@ -1653,6 +1859,84 @@ h2 .seg-sm { align-self: center; }
     pager('rows-pager', 'exrows', rows.length, () => drawTable(rows, me, dim));
   }
 
+  /**
+   * ── Bảng tổng, không lọc ───────────────────────────────────────────────
+   * Chỉ giữ khoảng ngày; bỏ hẳn user/app/tool khỏi truy vấn.
+   */
+  let ALL = null;
+
+  async function loadAll() {
+    const btn = $('all-load');
+    btn.disabled = true; btn.textContent = 'Đang nạp…';
+    try {
+      const q = new URLSearchParams();
+      const r = activeRange();
+      if (FILTER.preset) q.set('preset', FILTER.preset);
+      else { q.set('from', r.from); q.set('to', r.to); }
+      ALL = await getJson(`/api/explore?dims=${PANEL_DIMS.join(',')}&` + q);
+      drawAll();
+      $('all-csv').hidden = false;
+      btn.textContent = 'Nạp lại';
+    } catch (e) {
+      setHtml($('all-note'), `<b>Không nạp được:</b> ${esc(e.message)}`);
+      btn.textContent = 'Thử lại';
+    }
+    btn.disabled = false;
+  }
+
+  /** Mỗi dòng = một nhóm của một chiều, kèm ĐỦ 7 phép đo. */
+  function allRows() {
+    if (!ALL?.byDim) return [];
+    const out = [];
+    for (const key of PANEL_DIMS) {
+      const d = dimOf(key);
+      for (const r of ALL.byDim[key]?.rows || []) out.push({ dimLabel: d.label, ...r });
+    }
+    return out;
+  }
+
+  /**
+   * Câu cảnh báo phải chạy lại MỖI LẦN đổi bộ lọc, không chỉ lúc nạp bảng.
+   * Nạp bảng lúc chưa lọc rồi mới bật lọc là kịch bản thường gặp nhất, mà đó
+   * đúng là lúc hai vùng số lệch nhau và người đọc cần được nói.
+   */
+  function allNote() {
+    if (!ALL) return;
+    const dirty = FILTER.user || FILTER.app || FILTER.tool;
+    setHtml($('all-note'), 'Mọi chỉ số của cả 6 chiều, <b>không theo bộ lọc</b> — dùng để xuất file.'
+      + (dirty ? ' <b>Bộ lọc đang bật, nên số ở đây KHÔNG khớp các biểu đồ phía trên.</b>' : ''));
+  }
+
+  function drawAll() {
+    const rows = allRows();
+    $('all-n').textContent = rows.length ? `${nf(rows.length)} dòng` : '';
+    allNote();
+    setHtml($('t-all'),
+      '<thead><tr><th>Chiều</th><th>Nhóm</th>' + MEASURES.map((m) => `<th class="r">${esc(m.label)}</th>`).join('')
+      + '<th class="r">Gần nhất</th></tr></thead><tbody>'
+      + rows.map((r) => `<tr><td class="dim nw">${esc(r.dimLabel)}</td><td>${esc(cut(String(r.key), 44))}</td>`
+        + MEASURES.map((m) => `<td class="r num">${esc(fmt(r[m.key], m.fmt))}</td>`).join('')
+        + `<td class="r num dim nw">${dt(r.last)}</td></tr>`).join('')
+      + '</tbody>');
+  }
+
+  function downloadAllCsv() {
+    const rows = allRows();
+    if (!rows.length) return;
+    const q = (v) => '"' + String(v ?? '').replace(/"/g, '""') + '"';
+    const head = ['Chiều', 'Nhóm', ...MEASURES.map((m) => m.label), 'Gần nhất'];
+    const csv = [head.map(q).join(','), ...rows.map((r) =>
+      [r.dimLabel, r.key, ...MEASURES.map((m) => r[m.key] ?? ''), r.last || ''].map(q).join(','))].join('\r\n');
+    const url = URL.createObjectURL(new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' }));
+    const a = document.createElement('a');
+    const r = activeRange();
+    // `tong` trong tên file để không lẫn với CSV có lọc ở khu trên.
+    a.href = url;
+    a.download = ['mcp', 'tong', r.from, r.to].join('-') + '.csv';
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
   function downloadCsv() {
     if (!EX) return;
     const dim = dimOf(VIEW.dim), MS = measuresFor(dim.key);
@@ -1729,7 +2013,24 @@ h2 .seg-sm { align-self: center; }
       return;
     }
     try {
-      EX = await getJson(`/api/explore?dim=${encodeURIComponent(VIEW.dim)}&` + filterQuery());
+      /**
+       * MỘT lời gọi lấy cả 6 chiều, dùng chung cho 8 biểu đồ cố định và cho
+       * biểu đồ tự chọn bên dưới.
+       *
+       * Đo trên dữ liệu thật (7 ngày, 1233 lượt): gộp 6 chiều một lượt mất
+       * 0,70s, còn gọi 6 lượt riêng mất 2,51s — vì mỗi lượt đọc lại TOÀN BỘ
+       * hàng từ Supabase. Việc đắt là đọc, không phải gộp.
+       *
+       * `EX` vẫn giữ nguyên hình dạng cũ (dim/rows/skipped/groups) để khu
+       * "Đào sâu" và drawTable không phải sửa một dòng nào.
+       */
+      const RAW = await getJson(`/api/explore?dims=${PANEL_DIMS.join(',')}&` + filterQuery());
+      PANELS = RAW;
+      const cur = RAW.byDim?.[VIEW.dim] || { rows: [], skipped: 0 };
+      EX = {
+        ...RAW, dim: VIEW.dim, rows: cur.rows, skipped: cur.skipped,
+        groups: cur.rows.length, total: RAW.total - (cur.skipped || 0),
+      };
       drawChart();
     } catch (e) {
       $('chart').innerHTML = `<div class="empty" style="color:var(--critical)">Không tải được biểu đồ: ${esc(e.message)}</div>`;
