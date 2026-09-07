@@ -53,6 +53,18 @@ export const MEASURES = [
   { key: 'p95', label: 'Thời gian p95', fmt: 'ms' },
   { key: 'users', label: 'Số người khác nhau', fmt: 'int' },
   { key: 'tools', label: 'Số tool khác nhau', fmt: 'int' },
+  /**
+   * Kich thuoc ket qua tra ve cho model — tra loi "tool nao ngon cua so ngu
+   * canh". Doc duoc chinh xac, khac han so token.
+   */
+  { key: 'chars', label: 'Ký tự trả về', fmt: 'int' },
+  { key: 'charsAvg', label: 'Ký tự trả về / lượt', fmt: 'int' },
+  /**
+   * UOC LUONG, khong phai do duoc: server khong biet tokenizer cua client, va
+   * ti le ky tu/token khac nhau theo model. Nhan phai co chu "uoc tinh" —
+   * bay ra mot con so tron tria nhu the da do duoc la noi doi so lieu.
+   */
+  { key: 'tokens', label: 'Token ước tính (≈ ký tự / 4)', fmt: 'int' },
 ];
 
 /**

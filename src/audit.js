@@ -244,7 +244,7 @@ function schedule() {
   timer.unref?.(); // đừng giữ process sống chỉ vì hàng đợi audit
 }
 
-export function auditToolCall({ openId, userName, clientId, clientApp, toolName, args, ok, errorMsg, larkCode, durationMs }) {
+export function auditToolCall({ openId, userName, clientId, clientApp, toolName, args, ok, errorMsg, larkCode, durationMs, resultChars }) {
   if (!auditEnabled) return;
 
   if (queue.length >= QUEUE_MAX) {
@@ -286,6 +286,20 @@ export function auditToolCall({ openId, userName, clientId, clientApp, toolName,
     // số Lark còn trả chuỗi (`non_json` khi gọi nhầm host trả về HTML).
     lark_code: larkCode === undefined || larkCode === null ? null : String(larkCode).slice(0, 40),
     duration_ms: typeof durationMs === 'number' ? Math.round(durationMs) : null,
+    /**
+     * So KY TU cua chuoi ket qua tra ve cho model.
+     *
+     * De tra loi cau "tool nao dang ngon cua so ngu canh" — cau khong doc
+     * duoc tu duration_ms hay so luot goi. Mot tool chay nhanh ma tra ve
+     * 80k ky tu moi lan con dat hon nhieu tool cham ma tra ve mot dong.
+     *
+     * KHONG ghi "so token": server khong biet tokenizer cua client. Quy doi
+     * la viec cua tang doc, va o do phai noi ro la uoc luong.
+     *
+     * Cot moi — chua chay supabase/audit-result-chars.sql thi flush() tu go
+     * ra roi gui lai (xem missingCols), mat mot truong chu khong mat ca lo.
+     */
+    result_chars: typeof resultChars === 'number' ? Math.round(resultChars) : null,
   }));
 
   if (queue.length >= BATCH_MAX) flush();

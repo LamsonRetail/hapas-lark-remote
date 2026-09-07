@@ -6,7 +6,7 @@ import { sbFetch } from '../src/supabase.js';
 import { TOOLS } from '../src/tools/index.js';
 import { computeDashboard } from './compute.mjs';
 import { DIMENSIONS, MEASURES } from './explore-schema.mjs';
-import { EXPLORE_COLS, aggregate } from './explore-compute.mjs';
+import { EXPLORE_COLS, colAttempts, aggregate } from './explore-compute.mjs';
 import { DEFAULT_PRESET, MAX_RANGE_DAYS, PRESETS, TZ_MIN, resolveRange } from './range.mjs';
 
 /**
@@ -101,11 +101,26 @@ const data = await computeDashboard({ sb, toolNames: TOOLS.map((t) => t.name), a
  * kèm id tài liệu, mà preview.html là một file nằm trong repo.
  */
 const exRows = [];
+// Cùng cách xử lý với api/explore.js: thử đủ cột trước, hụt thì bỏ dần cột sinh
+// sau (result_chars, client_app). Không có bước này thì chưa chạy migration là
+// `npm run dashboard:build` chết hẳn, kéo theo cả bản preview tĩnh.
+const ATTEMPTS = colAttempts(EXPLORE_COLS);
+let ci = 0;
 for (let off = 0; off < 200000; off += 1000) {
-  const chunk = await sb(
-    `audit_logs?created_at=gte.${range.since}&created_at=lt.${range.until}&source=eq.url`
-    + `&select=${EXPLORE_COLS.join(',')}&order=created_at.asc&limit=1000&offset=${off}`,
-  );
+  let chunk;
+  for (;;) {
+    try {
+      chunk = await sb(
+        `audit_logs?created_at=gte.${range.since}&created_at=lt.${range.until}&source=eq.url`
+        + `&select=${ATTEMPTS[ci].join(',')}&order=created_at.asc&limit=1000&offset=${off}`,
+      );
+      break;
+    } catch (e) {
+      if (ci >= ATTEMPTS.length - 1) throw e;
+      console.warn(`  (thiếu cột, đọc lại không kèm: ${ATTEMPTS[ci].filter((c) => !ATTEMPTS[ci + 1].includes(c)).join(', ')})`);
+      ci++;
+    }
+  }
   exRows.push(...chunk);
   if (chunk.length < 1000) break;
 }

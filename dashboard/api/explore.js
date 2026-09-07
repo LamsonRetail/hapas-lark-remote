@@ -1,7 +1,7 @@
 import { sb, requireSupabase } from '../sb.mjs';
 import { DIM_BY_KEY } from '../explore-schema.mjs';
 import { resolveRange } from '../range.mjs';
-import { EXPLORE_COLS, aggregate, aggregateMany } from '../explore-compute.mjs';
+import { EXPLORE_COLS, colAttempts, aggregate, aggregateMany } from '../explore-compute.mjs';
 
 /**
  * Gộp số audit_logs theo MỘT cột do người xem chọn.
@@ -74,21 +74,23 @@ export default async function handler(req, res) {
   // công mỗi lượt là nguồn đốt egress. Bỏ args khỏi lần đọc chính; hỏi riêng cho
   // tập ok=false rồi khớp ngược lại. args vẫn KHÔNG đi xuống trình duyệt.
   const LIGHT = EXPLORE_COLS.filter((c) => c !== 'args');
-  const WITHOUT = LIGHT.filter((c) => c !== 'client_app');
+  // Thử đủ cột trước, hụt thì bỏ dần cột sinh sau (result_chars, rồi
+  // client_app). Xem OPTIONAL_COLS ở explore-compute.mjs.
+  const ATTEMPTS = colAttempts(LIGHT);
 
   try {
-    let cols = LIGHT;
+    let ci = 0;
+    let cols = ATTEMPTS[0];
     const rows = [];
     // PostgREST trả tối đa 1000 dòng một lần. Trần 200k là chốt chặn cho vòng
     // lặp, không phải giới hạn thiết kế — 90 ngày hiện ở mức vài nghìn dòng.
     for (let off = 0; off < 200000; off += 1000) {
       let chunk;
-      try {
-        chunk = await page(cols, off);
-      } catch (e) {
-        if (cols === WITHOUT) throw e;
-        cols = WITHOUT;
-        chunk = await page(cols, off);
+      for (;;) {
+        try { chunk = await page(cols, off); break; } catch (e) {
+          if (ci >= ATTEMPTS.length - 1) throw e;
+          cols = ATTEMPTS[++ci];
+        }
       }
       rows.push(...chunk);
       if (chunk.length < 1000) break;

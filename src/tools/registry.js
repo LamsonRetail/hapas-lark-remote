@@ -110,8 +110,9 @@ export function registerAll(server, specs, getToken, actor = {}) {
       const started = Date.now();
       // `last_seen` trong bảng machines — có throttle 5 phút, xem machines.js
       touchMachine({ openId: actor.openId, name: actor.name, clientId: actor.clientId, clientApp: actor.clientApp });
-      const done = (ok, errorMsg, larkCode) =>
+      const done = (ok, errorMsg, larkCode, resultChars) =>
         auditToolCall({
+          resultChars,
           openId: actor.openId,
           userName: actor.name,
           clientId: actor.clientId,
@@ -128,14 +129,29 @@ export function registerAll(server, specs, getToken, actor = {}) {
 
       try {
         const out = await execSpec(t, args, api);
-        done(true);
-        return { content: [{ type: 'text', text: typeof out === 'string' ? out : JSON.stringify(out, null, 2) }] };
+        /**
+         * Dựng chuỗi TRƯỚC rồi mới đo, thay vì đo `out`.
+         *
+         * Đây đúng là chuỗi đi vào cửa sổ ngữ cảnh của model, nên độ dài nó là
+         * con số thật. Đo `out` (object) thì phải serialize lần nữa — vừa tốn
+         * vừa có thể lệch với chuỗi thật sự được gửi.
+         *
+         * Ghi SỐ KÝ TỰ, không ghi "số token": server không biết tokenizer của
+         * client, mà tỉ lệ ký tự/token thì khác nhau theo model. Ước lượng token
+         * là việc của tầng đọc, và ở đó phải nói rõ là ước lượng.
+         */
+        const text = typeof out === 'string' ? out : JSON.stringify(out, null, 2);
+        done(true, null, null, text.length);
+        return { content: [{ type: 'text', text }] };
       } catch (e) {
         // e.code của LarkError: tách riêng để phân biệt "user thiếu quyền"
         // (chuyện thường ngày) với "endpoint đổi" (dấu hiệu API Lark thay đổi).
-        done(false, e.message, e.code);
         const hint = e.reauth ? '\n→ Vào lại connector và đăng nhập Lark một lần nữa.' : '';
-        return { content: [{ type: 'text', text: `Lỗi: ${e.message}${hint}` }], isError: true };
+        const text = `Lỗi: ${e.message}${hint}`;
+        // Đo cả lượt lỗi: câu báo lỗi cũng chiếm ngữ cảnh, và tool nào hay lỗi
+        // dài dòng thì cũng là tool đáng sửa.
+        done(false, e.message, e.code, text.length);
+        return { content: [{ type: 'text', text }], isError: true };
       }
     });
   }

@@ -132,6 +132,17 @@
       </div>
     </div>
 
+    <!-- Kích thước kết quả trả về. Câu này không đọc được từ số lượt gọi hay
+         thời gian: một tool chạy 200ms mà trả về 80 nghìn ký tự mỗi lần đắt
+         hơn nhiều một tool chạy 3 giây trả về một dòng. -->
+    <div class="card pad panel" data-panel="context">
+      <h2>Ngữ cảnh</h2>
+      <div class="p-grid">
+        <div class="p-one"><div class="p-t">Ký tự trả về theo tool</div><div class="p-c" id="p-chars-tool"></div></div>
+        <div class="p-one"><div class="p-t">Ký tự trả về mỗi lượt, theo tool</div><div class="p-c" id="p-charsavg-tool"></div></div>
+      </div>
+    </div>
+
     <div class="card pad panel" data-panel="rhythm">
       <h2>Nhịp &amp; kênh</h2>
       <div class="p-grid">
@@ -1080,6 +1091,8 @@
     { el: 'p-calls-user', dim: 'user_name', measure: 'calls', kind: 'hbar' },
     { el: 'p-calls-tool', dim: 'tool_name', measure: 'calls', kind: 'hbar' },
     { el: 'p-blocked-tool', dim: 'tool_name', measure: 'blocked', kind: 'hbar' },
+    { el: 'p-chars-tool', dim: 'tool_name', measure: 'chars', kind: 'hbar' },
+    { el: 'p-charsavg-tool', dim: 'tool_name', measure: 'charsAvg', kind: 'hbar' },
     { el: 'p-calls-hour', dim: 'hour', measure: 'calls', kind: 'bar' },
     { el: 'p-calls-app', dim: 'client_app', measure: 'calls', kind: 'hbar' },
   ];

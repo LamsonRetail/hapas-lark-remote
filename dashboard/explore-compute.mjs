@@ -22,7 +22,30 @@ export const SKIP_CLIENTS = new Set(['local-admin', 'canary', 'revoke-test-a']);
  * `args` chỉ phục vụ impact.mjs (nhận ra tham số trỏ ra ngoài Lark) — không
  * cột nào trong đó đi xuống trình duyệt, endpoint chỉ trả số đã gộp.
  */
-export const EXPLORE_COLS = ['created_at', 'tool_name', 'user_name', 'client_id', 'ok', 'duration_ms', 'lark_code', 'source', 'args', 'client_app'];
+export const EXPLORE_COLS = ['created_at', 'tool_name', 'user_name', 'client_id', 'ok', 'duration_ms', 'lark_code', 'source', 'args', 'client_app', 'result_chars'];
+
+/**
+ * Cột SINH SAU, có thể chưa tồn tại trên Supabase.
+ *
+ * Schema luôn đi sau code: `client_app` cần audit-client-app.sql, `result_chars`
+ * cần audit-result-chars.sql. PostgREST KHÔNG bỏ qua cột lạ trong `select` —
+ * nó trả 400 và cả endpoint chết theo 502.
+ *
+ * Bên đọc thử lần lượt bỏ từng cột trong danh sách này. Mất một cột (biểu đồ
+ * ngữ cảnh trống) còn hơn mất cả trang.
+ */
+export const OPTIONAL_COLS = ['result_chars', 'client_app'];
+
+/** Danh sách cột để thử lần lượt: đủ trước, rồi bỏ dần cột sinh sau. */
+export function colAttempts(base = EXPLORE_COLS) {
+  const out = [base];
+  let cur = base;
+  for (const c of OPTIONAL_COLS) {
+    cur = cur.filter((x) => x !== c);
+    out.push(cur);
+  }
+  return out;
+}
 
 /**
  * Gộp theo NHIỀU cột trong một lượt.
@@ -130,8 +153,11 @@ function groupOne(dim, { kept, blocked }) {
   for (const r of kept) {
     const k = keyOf(r);
     if (k === null) { skipped++; continue; }
-    const e = g.get(k) || { key: k, calls: 0, blocked: 0, ms: [], users: new Set(), tools: new Set(), last: null };
+    const e = g.get(k) || { key: k, calls: 0, blocked: 0, ms: [], users: new Set(), tools: new Set(), last: null, chars: 0, charsN: 0 };
     e.calls++;
+    // Dong cu (truoc khi co cot result_chars) la null — dem RIENG so dong co so
+    // de tinh trung binh dung, thay vi chia cho ca nhung dong khong do duoc.
+    if (r.result_chars != null) { e.chars += r.result_chars; e.charsN++; }
     if (blocked.has(r)) e.blocked++;
     if (r.duration_ms != null) e.ms.push(r.duration_ms);
     if (r.user_name) e.users.add(r.user_name);
@@ -146,6 +172,12 @@ function groupOne(dim, { kept, blocked }) {
       key: e.key, calls: e.calls, blocked: e.blocked, blockRate: pct(e.blocked, e.calls),
       p50: quant(s, 0.5), p95: quant(s, 0.95),
       users: e.users.size, tools: e.tools.size, last: e.last,
+      chars: e.charsN ? e.chars : null,
+      charsAvg: e.charsN ? Math.round(e.chars / e.charsN) : null,
+      // Uoc luong, KHONG phai do duoc: server khong biet tokenizer cua client.
+      // He so 4 la muc thong thuong cho JSON nhieu ASCII; nhan cua phep do noi
+      // ro day la uoc luong.
+      tokens: e.charsN ? Math.round(e.chars / 4) : null,
     };
   });
 
