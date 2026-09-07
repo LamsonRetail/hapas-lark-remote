@@ -24,6 +24,39 @@ const BATCH_MAX = 25;
 const FLUSH_MS = 5000;
 const QUEUE_MAX = 500; // chặn rò rỉ bộ nhớ khi Supabase chết dài
 
+/**
+ * Ký tự NUL (U+0000). Viết bằng fromCharCode chứ không gõ thẳng vào mã: gõ
+ * thẳng thì file nguồn thành nhị phân, git coi là binary và mất diff.
+ */
+const NUL = String.fromCharCode(0);
+
+/**
+ * Bỏ byte NUL khỏi mọi trường chuỗi của một bản ghi.
+ *
+ * Postgres KHÔNG lưu được NUL trong cột `text`: nó trả 22P05
+ * ("unsupported Unicode escape sequence") và TỪ CHỐI CẢ LÔ, y như chuyện thiếu
+ * cột ở trên.
+ *
+ * VÌ SAO ĐÁNG SỬA: không phải vì mất một bản ghi, mà vì nó KHOÁ VĨNH VIỄN cả
+ * hàng đợi dồn ra đĩa. `drainSpill()` gửi theo lô và giữ nguyên file khi hỏng
+ * để thử lại — nên một bản ghi dính NUL làm mọi lô chứa nó hỏng mãi mãi, và
+ * những bản ghi phía sau không bao giờ vào được.
+ *
+ * Đã dính thật: sự cố 402 ngày 03–04/09/2026 dồn 791 bản ghi ra đĩa, trong đó
+ * đúng 2 dòng từ `lark_api_call` có NUL. Supabase sống lại vẫn không tự nạp
+ * được dòng nào; phải lọc tay mới đẩy hết lên.
+ *
+ * Lọc ngay lúc xếp hàng chứ không lúc gửi: như thế cả đường ghi thẳng lẫn đường
+ * dồn ra đĩa đều nhận dữ liệu đã sạch, và file spill sinh ra từ nay không còn
+ * mang thuốc độc.
+ */
+function stripNul(row) {
+  for (const [k, v] of Object.entries(row)) {
+    if (typeof v === 'string' && v.includes(NUL)) row[k] = v.replaceAll(NUL, '');
+  }
+  return row;
+}
+
 export const auditEnabled = sbEnabled;
 
 let queue = [];
@@ -170,7 +203,9 @@ async function drainSpill() {
        * nên trường hợp xấu nhất cũng chỉ quay về đúng hành vi cũ.
        */
       if (_spilled_at) row.created_at = _spilled_at;
-      rows.push(row);
+      // Lọc lại lần nữa: file dự phòng do BẢN CŨ sinh ra vẫn còn NUL, mà chính
+      // những file đó mới là thứ đang mắc kẹt và cần nạp lại được.
+      rows.push(stripNul(row));
     } catch {}
   }
 
@@ -225,7 +260,7 @@ export function auditToolCall({ openId, userName, clientId, clientApp, toolName,
     argsStr = '[không serialize được]';
   }
 
-  queue.push({
+  queue.push(stripNul({
     source: 'url', // 'zip' là client cài từ file zip, ghi qua portal
     machine_name: null, // chỉ có nghĩa với source='zip'
     app_id: config.appId,
@@ -251,7 +286,7 @@ export function auditToolCall({ openId, userName, clientId, clientApp, toolName,
     // số Lark còn trả chuỗi (`non_json` khi gọi nhầm host trả về HTML).
     lark_code: larkCode === undefined || larkCode === null ? null : String(larkCode).slice(0, 40),
     duration_ms: typeof durationMs === 'number' ? Math.round(durationMs) : null,
-  });
+  }));
 
   if (queue.length >= BATCH_MAX) flush();
   else schedule();
