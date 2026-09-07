@@ -64,7 +64,7 @@ export const MEASURES = [
    * ti le ky tu/token khac nhau theo model. Nhan phai co chu "uoc tinh" —
    * bay ra mot con so tron tria nhu the da do duoc la noi doi so lieu.
    */
-  { key: 'tokens', label: 'Token ước tính (≈ ký tự / 4)', fmt: 'int' },
+  { key: 'tokens', label: 'Token ước tính (≈ ký tự / 2,4)', fmt: 'int' },
 ];
 
 /**

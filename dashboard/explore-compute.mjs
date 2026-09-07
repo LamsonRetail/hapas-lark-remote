@@ -14,6 +14,33 @@ import { localDay, localHour } from './range.mjs';
 const pct = (n, d) => (d ? +((n / d) * 100).toFixed(1) : 0);
 const quant = (s, q) => (s.length ? s[Math.min(s.length - 1, Math.floor(s.length * q))] : null);
 
+/**
+ * Số ký tự trên MỘT token — ĐO trên kết quả tool thật, không phải hệ số đoán.
+ *
+ * Đo bằng gpt-tokenizer (BPE cl100k) trên bốn mẫu kết quả thực tế của chính
+ * server này:
+ *
+ *   lark_whoami  (tên tiếng Việt)         600 ký tự /   241 token = 2,49
+ *   im_chat_list (ID + tên nhóm)        1.020 /   386            = 2,64
+ *   task_search  (nhiều văn bản Việt)     566 /   254            = 2,23
+ *   chỉ ID và số (không tiếng Việt)     1.533 /   681            = 2,25
+ *   ─────────────────────────────────────────────────────────────────────
+ *   TỔNG                                3.719 / 1.562            = 2,38
+ *
+ * VÌ SAO KHÔNG PHẢI 4 như mức thường nghe: 4 là tỉ lệ cho văn xuôi tiếng Anh.
+ * Kết quả tool ở đây là JSON đầy dấu ngoặc, dấu phẩy, và ID Lark dạng hex ngẫu
+ * nhiên (`ou_1bc55b6d...`) — BPE cắt ID thành rất nhiều token vụn. Mẫu "chỉ ID
+ * và số" tệ nhất (2,25) chính vì thế, không phải do tiếng Việt. Dùng 4 thì
+ * thiếu khoảng 40% số token thật.
+ *
+ * Dải đo được là 2,23–2,64, tức ±9% quanh 2,4 — đủ ổn định để quy đổi.
+ *
+ * CÒN LẠI MỘT SAI SỐ KHÔNG ĐO ĐƯỢC: đây là tokenizer của GPT, không phải của
+ * Claude. Hai bên cùng họ BPE và cùng tầm nhưng không trùng nhau. Nên vẫn là
+ * ƯỚC LƯỢNG — chỉ là ước lượng đã hiệu chỉnh bằng số đo, thay vì đoán.
+ */
+const CHARS_PER_TOKEN = 2.4;
+
 /** clientId của công cụ chạy tại chỗ — cùng danh sách computeDashboard loại ra. */
 export const SKIP_CLIENTS = new Set(['local-admin', 'canary', 'revoke-test-a']);
 
@@ -174,10 +201,7 @@ function groupOne(dim, { kept, blocked }) {
       users: e.users.size, tools: e.tools.size, last: e.last,
       chars: e.charsN ? e.chars : null,
       charsAvg: e.charsN ? Math.round(e.chars / e.charsN) : null,
-      // Uoc luong, KHONG phai do duoc: server khong biet tokenizer cua client.
-      // He so 4 la muc thong thuong cho JSON nhieu ASCII; nhan cua phep do noi
-      // ro day la uoc luong.
-      tokens: e.charsN ? Math.round(e.chars / 4) : null,
+      tokens: e.charsN ? Math.round(e.chars / CHARS_PER_TOKEN) : null,
     };
   });
 
