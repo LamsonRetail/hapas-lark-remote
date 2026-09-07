@@ -504,3 +504,18 @@ h2 .seg-sm { align-self: center; }
 /* Hai ô "Chi tiết theo" dồn từ thẻ biểu đồ về thanh lọc — tách nhẹ khỏi bốn ô
    lọc dữ liệu bằng một vạch, vì chúng làm việc khác: chọn góc nhìn, không lọc. */
 .fb-view { border-left: 1px solid var(--hairline); padding-left: 12px; }
+
+/* ── Phóng to một biểu đồ nhỏ ─────────────────────────────────────────────
+   Bấm tiêu đề thì khung đó chiếm hết chiều ngang của bảng và cao lên. Đặt trên
+   TIÊU ĐỀ chứ không trên cả khung, vì các cột đã nhận bấm-để-lọc rồi.        */
+.panels .p-t { cursor: zoom-in; user-select: none; }
+.panels .p-t:hover { color: var(--ink); }
+.panels .p-t:focus-visible { outline: 2px solid var(--ink-2); outline-offset: 2px; }
+.p-one.zoom > .p-t { cursor: zoom-out; }
+
+/* Khung được phóng: chiếm cả hai cột của .p-grid nếu có, và cho SVG cao hơn.
+   Bảng chứa nó cũng nhảy ra hết chiều ngang lưới .panels.                    */
+.p-one.zoom { grid-column: 1 / -1; }
+.p-one.zoom .p-c { min-height: 320px; }
+.p-one.zoom .p-c svg { max-height: 62vh; }
+.panels .panel:has(.p-one.zoom) { grid-column: 1 / -1; }

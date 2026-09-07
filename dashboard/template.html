@@ -179,7 +179,11 @@
        audit_logs nên không có phép gộp nào dựng lại được chúng. Riêng "Token
        còn" là con số DUY NHẤT trên trang đòi hành động TRƯỚC khi hỏng. -->
   <div class="zone">Chi tiết</div>
-  <section class="card pad" id="people-card">
+  <!-- ẨN mặc định, hiện khi bấm KPI "Người đã cắm".
+       Bảng này dài 44 dòng và phần lớn thời gian không ai cần tới; để mở sẵn
+       thì nó đẩy mọi thứ khác xuống dưới màn hình. Bấm con số mới hiện — mà
+       bấm con số cũng đúng là lúc người đọc đang hỏi "44 ai?". -->
+  <section class="card pad" id="people-card" hidden>
     <h2>
       Người dùng <span class="n" id="people-n"></span>
       <span class="spacer"></span>
@@ -203,28 +207,6 @@
     <div id="rows-pager"></div>
   </section>
 
-  <!-- ══ Bảng tổng — KHÔNG theo bộ lọc ══════════════════════════════════════
-       Gộp mọi chỉ số của cả 6 chiều vào một bảng để xuất ra file.
-
-       CỐ Ý KHÔNG LỌC: đây là bảng để mang số đi chỗ khác, nên nó phải đầy đủ
-       bất kể trên màn hình đang xem góc nào. Đổi lại, số ở đây SẼ KHÔNG KHỚP
-       với các biểu đồ phía trên khi bộ lọc đang bật — nên phải nói thẳng điều
-       đó ngay trên bảng, không để người đọc tự phát hiện.
-
-       NẠP THEO YÊU CẦU, không nạp sẵn: nó cần một lượt đọc Supabase riêng
-       (không dùng lại được lời gọi có lọc). Nạp tự động mỗi lần đổi bộ lọc là
-       nhân đôi egress cho một bảng mà phần lớn thời gian không ai mở — mà
-       Supabase vừa bị khoá vì vượt hạn mức 344%.
-  ══════════════════════════════════════════════════════════════════════════ -->
-  <section class="card pad" id="all-card">
-    <h2>
-      Bảng tổng <span class="n" id="all-n"></span>
-      <span class="spacer"></span>
-      <button class="btn" id="all-csv" hidden>Tải CSV</button>
-    </h2>
-    <div class="p-q" id="all-note">Mọi chỉ số của cả 6 chiều, theo đúng bộ lọc đang bật — dùng để xuất file.</div>
-    <div class="scroll"><table class="wide" id="t-all"></table></div>
-  </section>
 </div>
 
 <div id="tip" role="status"></div>
@@ -490,6 +472,32 @@
     $('f-user').addEventListener('change', (e) => { FILTER.user = e.target.value; applyFilter(); });
     $('f-app').addEventListener('change', (e) => { FILTER.app = e.target.value; applyFilter(); });
     $('f-tool').addEventListener('change', (e) => { FILTER.tool = e.target.value; applyFilter(); });
+
+    /**
+     * Bấm TIÊU ĐỀ một biểu đồ nhỏ là phóng nó ra hết chiều ngang và cao lên.
+     *
+     * Vì sao đặt trên tiêu đề chứ không trên cả khung: các cột trong biểu đồ đã
+     * nhận bấm-để-lọc rồi. Gắn phóng to lên cả khung thì hai thao tác tranh
+     * nhau, và người dùng không đoán được bấm vào đâu ra chuyện gì.
+     *
+     * Tiêu đề là static trong HTML (không dựng lại mỗi 30s như nội dung biểu
+     * đồ), nên gắn listener đúng một lần lúc boot là đủ.
+     */
+    for (const t of document.querySelectorAll('.panels .p-t')) {
+      t.setAttribute('role', 'button');
+      t.tabIndex = 0;
+      const zoom = () => {
+        const one = t.closest('.p-one');
+        const dang = one.classList.toggle('zoom');
+        t.setAttribute('aria-expanded', String(dang));
+        // Vẽ lại để biểu đồ tính lại theo khổ mới: SVG dùng viewBox nên nó tự
+        // giãn, nhưng bản ngang cần nhiều nhóm hơn khi có chỗ.
+        drawPanels();
+        if (dang) one.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      };
+      t.addEventListener('click', zoom);
+      t.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); zoom(); } });
+    }
     $('f-reset').addEventListener('click', () => { Object.assign(FILTER, DEF_FILTER); applyFilter(); });
     $('f-cal').addEventListener('click', () => (calOpen ? closeCal() : openCal()));
 
@@ -882,29 +890,35 @@
     // đọc muốn hỏi "44 ai?" — mà câu trả lời nằm sẵn ở cuối trang, chỉ thiếu
     // đường dẫn tới.
     { k: 'Người đã cắm', v: nf(k.connected ?? k.users), d: `${nf(k.users)} người đã gọi tool`,
-      go: 'people-card', goLabel: 'xem từng người' },
+      go: 'people-card', goLabel: 'ấn để xem từng người' },
     { k: 'Độ trễ p95', v: ms(k.p95), d: 'trung vị ' + ms(k.p50) },
     { k: 'Tool đã dùng', v: `${k.toolsUsed}<small>/${k.toolsTotal}</small>`, d: `${D.unused.length} chưa ai gọi` },
-  ].map((t) => `<div class="card kpi${t.hero ? ' hero' : ''}${t.go ? ' kpi-go" role="button" tabindex="0" data-go="' + t.go : ''}">
+  ].map((t) => `<div class="card kpi${t.hero ? ' hero' : ''}${t.go ? ' kpi-go" role="button" tabindex="0" aria-expanded="false" data-go-label="' + esc(t.goLabel) + '" data-go="' + t.go : ''}">
       <div class="k">${esc(t.k)}</div>
       <div class="v num"${t.sev ? ` style="color: var(--${t.sev})"` : ''}>${t.v}</div>
-      <div class="d">${esc(t.d)}${t.go ? ` <span class="kpi-arrow">${esc(t.goLabel)} →</span>` : ''}</div></div>`).join(''));
+      <div class="d">${esc(t.d)}${t.go ? ` <span class="kpi-arrow">${esc(t.goLabel)} ↓</span>` : ''}</div></div>`).join(''));
 
   /**
-   * Bấm KPI có `data-go` là cuộn xuống khu tương ứng và nháy viền một nhịp.
-   * Chỉ cuộn thì người dùng không biết mình vừa được đưa tới đâu — nhất là khi
-   * khu đích đã nằm trong khung nhìn và cuộn không tạo chuyển động nào.
+   * Bấm KPI có `data-go` là MỞ/ĐÓNG khu tương ứng, không chỉ cuộn tới.
+   *
+   * Khu đó ẩn mặc định (xem ghi chú ở #people-card): bảng 44 dòng mở sẵn thì
+   * đẩy mọi thứ khác xuống dưới màn hình, mà phần lớn thời gian không ai cần.
+   *
+   * Cuộn tới CHỈ KHI vừa mở, và chỉ khi nó chưa nằm trong khung nhìn — mở ra
+   * rồi cuộn giật một cái dù đang thấy sẵn là chuyển động vô cớ.
    */
   for (const el of document.querySelectorAll('.kpi-go')) {
     const go = () => {
       const t = $(el.dataset.go);
       if (!t) return;
-      t.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      t.classList.remove('flash');
-      // Đọc offsetWidth để buộc trình duyệt tính lại layout, nếu không thì gỡ
-      // rồi gắn lại class ngay trong một khung hình sẽ không chạy lại animation.
-      void t.offsetWidth;
-      t.classList.add('flash');
+      const mo = t.hidden;
+      t.hidden = !mo;
+      el.setAttribute('aria-expanded', String(mo));
+      const nhan = el.querySelector('.kpi-arrow');
+      if (nhan) nhan.textContent = mo ? 'ẩn bảng ↑' : `${el.dataset.goLabel || 'xem từng người'} ↓`;
+      if (!mo) return;
+      const r = t.getBoundingClientRect();
+      if (r.top < 0 || r.bottom > innerHeight) t.scrollIntoView({ behavior: 'smooth', block: 'start' });
     };
     el.addEventListener('click', go);
     el.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); go(); } });
@@ -1081,7 +1095,6 @@
       if (b) { VIEW.kind = b.dataset.v; pushUrl(); drawChart(); }
     });
     $('f-csv').addEventListener('click', downloadCsv);
-    $('all-csv').addEventListener('click', downloadAllCsv);
   }
 
   function syncChartControls() {
@@ -1124,7 +1137,8 @@
   /** Chiều nào bấm vào thì đặt được bộ lọc nào. `day`/`hour`/`ok` không có ô lọc tương ứng. */
   const CLICK_TO_FILTER = { user_name: 'user', tool_name: 'tool', client_app: 'app' };
 
-  const PANEL_MAX = 8; // mỗi biểu đồ nhỏ chỉ hiện 8 nhóm lớn nhất
+  const PANEL_MAX = 8;       // khổ nhỏ: 8 nhóm lớn nhất
+  const PANEL_MAX_ZOOM = 25; // phóng to thì có chỗ cho nhiều hơn
 
   function drawPanels() {
     if (!PANELS?.byDim) return;
@@ -1138,7 +1152,10 @@
         .filter((r) => r[me.key] != null && (me.zeroable || r[me.key] > 0));
       // Trục thời gian giữ thứ tự thời gian; cột phân loại xếp theo chính phép
       // đo đang xem, không phải theo lượt gọi.
-      const rows = dim.time ? all : all.slice().sort((a, b) => b[me.key] - a[me.key]).slice(0, PANEL_MAX);
+      // Phóng to thì hiện nhiều nhóm hơn — có chỗ mà vẫn cắt còn 8 là phóng để
+      // xem cùng một thứ to hơn, không phải để thấy thêm.
+      const cap = box.closest('.p-one')?.classList.contains('zoom') ? PANEL_MAX_ZOOM : PANEL_MAX;
+      const rows = dim.time ? all : all.slice().sort((a, b) => b[me.key] - a[me.key]).slice(0, cap);
 
       if (!rows.length) { setHtml(box, '<div class="p-empty">Không có số liệu</div>'); continue; }
       setHtml(box, miniChart(rows, me, dim, s.kind));
@@ -1199,7 +1216,6 @@
     if (!EX) return;
     syncChartControls();
     drawPanels();
-    drawAll();
 
     const dim = dimOf(VIEW.dim), me = measureOf(VIEW.measure), kind = kindNow();
     const val = (r) => r[me.key];
@@ -1402,61 +1418,6 @@
     pager('rows-pager', 'exrows', rows.length, () => drawTable(rows, me, dim));
   }
 
-  /**
-   * ── Bảng tổng ──────────────────────────────────────────────────────────
-   *
-   * ĐI THEO bộ lọc như mọi phần khác trên trang. Bản đầu để nó không lọc để
-   * xuất được tệp đầy đủ, nhưng một trang có hai vùng số nói hai chuyện khác
-   * nhau là nguồn nhầm không ai truy ra được — nên bỏ.
-   *
-   * Và vì đã cùng bộ lọc thì nó DÙNG LẠI ĐƯỢC `PANELS`: thứ đó đã chứa đủ 6
-   * chiều với đúng bộ lọc đang bật. Không gọi Supabase thêm lần nào, không cần
-   * nút nạp riêng, và không bao giờ lệch với biểu đồ phía trên.
-   */
-
-  /** Mỗi dòng = một nhóm của một chiều, kèm ĐỦ 7 phép đo. */
-  function allRows() {
-    if (!PANELS?.byDim) return [];
-    const out = [];
-    for (const key of PANEL_DIMS) {
-      const d = dimOf(key);
-      for (const r of PANELS.byDim[key]?.rows || []) out.push({ dimLabel: d.label, ...r });
-    }
-    return out;
-  }
-
-  function drawAll() {
-    const rows = allRows();
-    $('all-csv').hidden = !rows.length;
-    $('all-n').textContent = rows.length ? `${nf(rows.length)} dòng` : '';
-    setHtml($('t-all'),
-      '<thead><tr><th>Chiều</th><th>Nhóm</th>' + MEASURES.map((m) => `<th class="r">${esc(m.label)}</th>`).join('')
-      + '<th class="r">Gần nhất</th></tr></thead><tbody>'
-      + rows.map((r) => `<tr><td class="dim nw">${esc(r.dimLabel)}</td><td>${esc(cut(String(r.key), 44))}</td>`
-        + MEASURES.map((m) => `<td class="r num">${esc(fmt(r[m.key], m.fmt))}</td>`).join('')
-        + `<td class="r num dim nw">${dt(r.last)}</td></tr>`).join('')
-      + '</tbody>');
-  }
-
-  function downloadAllCsv() {
-    const rows = allRows();
-    if (!rows.length) return;
-    const q = (v) => '"' + String(v ?? '').replace(/"/g, '""') + '"';
-    const head = ['Chiều', 'Nhóm', ...MEASURES.map((m) => m.label), 'Gần nhất'];
-    const csv = [head.map(q).join(','), ...rows.map((r) =>
-      [r.dimLabel, r.key, ...MEASURES.map((m) => r[m.key] ?? ''), r.last || ''].map(q).join(','))].join('\r\n');
-    const url = URL.createObjectURL(new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' }));
-    const a = document.createElement('a');
-    const r = activeRange();
-    // `tong` trong tên file để không lẫn với CSV có lọc ở khu trên.
-    a.href = url;
-    // Tên file mang theo cả bộ lọc: hai lần tải về cùng tên mà khác nội dung
-    // là kiểu nhầm không ai truy ra được sau một tuần.
-    a.download = ['mcp', 'tong', r.from, r.to, FILTER.user && 'nguoi', FILTER.app, FILTER.tool]
-      .filter(Boolean).join('-') + '.csv';
-    a.click();
-    URL.revokeObjectURL(url);
-  }
 
   function downloadCsv() {
     if (!EX) return;
