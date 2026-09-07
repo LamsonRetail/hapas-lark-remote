@@ -601,7 +601,7 @@ h2 .seg-sm { align-self: center; }
   ══════════════════════════════════════════════════════════════════════════ -->
   <section class="panels" id="panels">
     <div class="card pad panel" data-panel="health">
-      <h2>Sức khoẻ <span class="p-q">nó có đang chạy tốt không?</span></h2>
+      <h2>Sức khoẻ</h2>
       <div class="p-grid">
         <div class="p-one"><div class="p-t">Tỉ lệ không dùng được theo ngày</div><div class="p-c" id="p-blockrate-day"></div></div>
         <div class="p-one"><div class="p-t">Thời gian p95 theo ngày</div><div class="p-c" id="p-p95-day"></div></div>
@@ -609,7 +609,7 @@ h2 .seg-sm { align-self: center; }
     </div>
 
     <div class="card pad panel" data-panel="usage">
-      <h2>Mức dùng <span class="p-q">ai đang dùng, nhiều hay ít?</span></h2>
+      <h2>Mức dùng</h2>
       <div class="p-grid">
         <div class="p-one"><div class="p-t">Lượt gọi theo ngày</div><div class="p-c" id="p-calls-day"></div></div>
         <div class="p-one"><div class="p-t">Người gọi nhiều nhất</div><div class="p-c" id="p-calls-user"></div></div>
@@ -617,7 +617,7 @@ h2 .seg-sm { align-self: center; }
     </div>
 
     <div class="card pad panel" data-panel="tools">
-      <h2>Công cụ <span class="p-q">tool nào chạy nhiều, tool nào hay hỏng?</span></h2>
+      <h2>Công cụ</h2>
       <div class="p-grid">
         <div class="p-one"><div class="p-t">Lượt gọi theo tool</div><div class="p-c" id="p-calls-tool"></div></div>
         <div class="p-one"><div class="p-t">Không dùng được theo tool</div><div class="p-c" id="p-blocked-tool"></div></div>
@@ -625,7 +625,7 @@ h2 .seg-sm { align-self: center; }
     </div>
 
     <div class="card pad panel" data-panel="rhythm">
-      <h2>Nhịp &amp; kênh <span class="p-q">dùng vào lúc nào, qua ứng dụng gì?</span></h2>
+      <h2>Nhịp &amp; kênh</h2>
       <div class="p-grid">
         <div class="p-one"><div class="p-t">Lượt gọi theo giờ trong ngày</div><div class="p-c" id="p-calls-hour"></div></div>
         <div class="p-one"><div class="p-t">Lượt gọi theo ứng dụng</div><div class="p-c" id="p-calls-app"></div></div>
@@ -701,10 +701,9 @@ h2 .seg-sm { align-self: center; }
     <h2>
       Bảng tổng <span class="n" id="all-n"></span>
       <span class="spacer"></span>
-      <button class="btn" id="all-load">Nạp bảng tổng</button>
       <button class="btn" id="all-csv" hidden>Tải CSV</button>
     </h2>
-    <div class="p-q" id="all-note">Mọi chỉ số của cả 6 chiều, <b>không theo bộ lọc</b> — dùng để xuất file. Nạp riêng nên bấm mới chạy.</div>
+    <div class="p-q" id="all-note">Mọi chỉ số của cả 6 chiều, theo đúng bộ lọc đang bật — dùng để xuất file.</div>
     <div class="scroll"><table class="wide" id="t-all"></table></div>
   </section>
 </div>
@@ -1539,7 +1538,6 @@ h2 .seg-sm { align-self: center; }
       if (b) { VIEW.kind = b.dataset.v; pushUrl(); drawChart(); }
     });
     $('f-csv').addEventListener('click', downloadCsv);
-    $('all-load').addEventListener('click', loadAll);
     $('all-csv').addEventListener('click', downloadAllCsv);
   }
 
@@ -1557,7 +1555,7 @@ h2 .seg-sm { align-self: center; }
   // Trần số nhóm vẽ ra. 60 tool hay 40 người trên một biểu đồ là 40 nhãn không
   // đọc nổi; phần còn lại vẫn nằm đủ ở bảng bên dưới, và dòng tóm tắt nói rõ
   // đã cắt bao nhiêu — cắt âm thầm thì biểu đồ trông như đã bày hết.
-  const MAX_BARS = 25;
+  const MAX_BARS = Infinity; // khu "chi tiet" thi phai HET nhom: xem nguoi la thay het nguoi. Muon gon thi da co 8 bieu do nho o tren (PANEL_MAX)
 
   /**
    * ── Tám biểu đồ cố định ────────────────────────────────────────────────
@@ -1656,7 +1654,7 @@ h2 .seg-sm { align-self: center; }
     if (!EX) return;
     syncChartControls();
     drawPanels();
-    allNote();
+    drawAll();
 
     const dim = dimOf(VIEW.dim), me = measureOf(VIEW.measure), kind = kindNow();
     const val = (r) => r[me.key];
@@ -1860,57 +1858,32 @@ h2 .seg-sm { align-self: center; }
   }
 
   /**
-   * ── Bảng tổng, không lọc ───────────────────────────────────────────────
-   * Chỉ giữ khoảng ngày; bỏ hẳn user/app/tool khỏi truy vấn.
+   * ── Bảng tổng ──────────────────────────────────────────────────────────
+   *
+   * ĐI THEO bộ lọc như mọi phần khác trên trang. Bản đầu để nó không lọc để
+   * xuất được tệp đầy đủ, nhưng một trang có hai vùng số nói hai chuyện khác
+   * nhau là nguồn nhầm không ai truy ra được — nên bỏ.
+   *
+   * Và vì đã cùng bộ lọc thì nó DÙNG LẠI ĐƯỢC `PANELS`: thứ đó đã chứa đủ 6
+   * chiều với đúng bộ lọc đang bật. Không gọi Supabase thêm lần nào, không cần
+   * nút nạp riêng, và không bao giờ lệch với biểu đồ phía trên.
    */
-  let ALL = null;
-
-  async function loadAll() {
-    const btn = $('all-load');
-    btn.disabled = true; btn.textContent = 'Đang nạp…';
-    try {
-      const q = new URLSearchParams();
-      const r = activeRange();
-      if (FILTER.preset) q.set('preset', FILTER.preset);
-      else { q.set('from', r.from); q.set('to', r.to); }
-      ALL = await getJson(`/api/explore?dims=${PANEL_DIMS.join(',')}&` + q);
-      drawAll();
-      $('all-csv').hidden = false;
-      btn.textContent = 'Nạp lại';
-    } catch (e) {
-      setHtml($('all-note'), `<b>Không nạp được:</b> ${esc(e.message)}`);
-      btn.textContent = 'Thử lại';
-    }
-    btn.disabled = false;
-  }
 
   /** Mỗi dòng = một nhóm của một chiều, kèm ĐỦ 7 phép đo. */
   function allRows() {
-    if (!ALL?.byDim) return [];
+    if (!PANELS?.byDim) return [];
     const out = [];
     for (const key of PANEL_DIMS) {
       const d = dimOf(key);
-      for (const r of ALL.byDim[key]?.rows || []) out.push({ dimLabel: d.label, ...r });
+      for (const r of PANELS.byDim[key]?.rows || []) out.push({ dimLabel: d.label, ...r });
     }
     return out;
   }
 
-  /**
-   * Câu cảnh báo phải chạy lại MỖI LẦN đổi bộ lọc, không chỉ lúc nạp bảng.
-   * Nạp bảng lúc chưa lọc rồi mới bật lọc là kịch bản thường gặp nhất, mà đó
-   * đúng là lúc hai vùng số lệch nhau và người đọc cần được nói.
-   */
-  function allNote() {
-    if (!ALL) return;
-    const dirty = FILTER.user || FILTER.app || FILTER.tool;
-    setHtml($('all-note'), 'Mọi chỉ số của cả 6 chiều, <b>không theo bộ lọc</b> — dùng để xuất file.'
-      + (dirty ? ' <b>Bộ lọc đang bật, nên số ở đây KHÔNG khớp các biểu đồ phía trên.</b>' : ''));
-  }
-
   function drawAll() {
     const rows = allRows();
+    $('all-csv').hidden = !rows.length;
     $('all-n').textContent = rows.length ? `${nf(rows.length)} dòng` : '';
-    allNote();
     setHtml($('t-all'),
       '<thead><tr><th>Chiều</th><th>Nhóm</th>' + MEASURES.map((m) => `<th class="r">${esc(m.label)}</th>`).join('')
       + '<th class="r">Gần nhất</th></tr></thead><tbody>'
@@ -1932,7 +1905,10 @@ h2 .seg-sm { align-self: center; }
     const r = activeRange();
     // `tong` trong tên file để không lẫn với CSV có lọc ở khu trên.
     a.href = url;
-    a.download = ['mcp', 'tong', r.from, r.to].join('-') + '.csv';
+    // Tên file mang theo cả bộ lọc: hai lần tải về cùng tên mà khác nội dung
+    // là kiểu nhầm không ai truy ra được sau một tuần.
+    a.download = ['mcp', 'tong', r.from, r.to, FILTER.user && 'nguoi', FILTER.app, FILTER.tool]
+      .filter(Boolean).join('-') + '.csv';
     a.click();
     URL.revokeObjectURL(url);
   }
