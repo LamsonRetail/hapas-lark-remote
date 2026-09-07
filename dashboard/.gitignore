@@ -5,3 +5,6 @@
 # chưa lộ tên ai, nhưng đổi một dòng trong build.mjs sang "người gọi" là lộ —
 # chặn theo khuôn tên để không phải nhớ ra điều đó vào đúng lúc đổi.
 *preview.html
+
+.vercel
+.env*

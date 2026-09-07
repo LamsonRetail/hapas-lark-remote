@@ -68,10 +68,14 @@ export async function computeDashboard({ sb, toolNames, appId, range, user = '',
    * KHÔNG bỏ qua cột lạ trong `select` — nó trả 400 và cả trang chết theo. Cùng
    * cách xử lý với readMachines: hỏi kèm trước, hụt thì hỏi lại không kèm.
    */
-  const AUDIT_COLS = 'created_at,tool_name,user_name,open_id,client_id,ok,duration_ms,lark_code,error_msg,args';
+  // `args` là cột NẶNG NHẤT bảng (tham số thô, cắt ở 2000 ký tự) và chỉ
+  // impact.mjs cần tới — mà cũng chỉ cho dòng LỖI. Kéo nó kèm cả nghìn dòng
+  // THÀNH CÔNG mỗi lượt poll chính là nguồn đốt egress đã làm vượt hạn mức
+  // Supabase. Nên select chính BỎ args; args hỏi riêng cho đúng tập ok=false ở
+  // readErrorArgs rồi khớp ngược lại. Nó vẫn KHÔNG đi xuống trình duyệt —
+  // computeDashboard chỉ trả về số đã gộp.
+  const AUDIT_COLS = 'created_at,tool_name,user_name,open_id,client_id,ok,duration_ms,lark_code,error_msg';
   const readAudit = async () => {
-    // `args` chỉ để impact.mjs nhận ra tham số trỏ ra ngoài Lark. Nó KHÔNG đi
-    // xuống trình duyệt — computeDashboard chỉ trả về số đã gộp.
     const q = (cols) => page(
       `audit_logs?source=eq.url&created_at=gte.${since}&created_at=lt.${until}&select=${cols}&order=created_at.asc`,
     );
@@ -82,8 +86,14 @@ export async function computeDashboard({ sb, toolNames, appId, range, user = '',
     }
   };
 
-  const [raw, machines, canaryRow, sessionRow, ingestRow] = await Promise.all([
+  // Chỉ dòng lỗi mới cần `args` (impact.mjs xem tham số có trỏ ra ngoài Lark
+  // không). Tập này nhỏ hơn toàn cửa sổ nhiều lần — có index riêng cho ok=false.
+  const readErrorArgs = () =>
+    page(`audit_logs?source=eq.url&created_at=gte.${since}&created_at=lt.${until}&ok=eq.false&select=created_at,tool_name,open_id,args&order=created_at.asc`);
+
+  const [raw, errorArgs, machines, canaryRow, sessionRow, ingestRow] = await Promise.all([
     readAudit(),
+    readErrorArgs(),
     readMachines(),
     sb('audit_logs?source=eq.url&tool_name=eq.canary_heartbeat&select=created_at,ok,args&order=created_at.desc&limit=1'),
     sb('v_session_health?select=created_at,state&limit=1'),
@@ -97,6 +107,12 @@ export async function computeDashboard({ sb, toolNames, appId, range, user = '',
      */
     sb('audit_logs?source=eq.url&select=created_at&order=created_at.desc&limit=1'),
   ]);
+
+  // Gắn `args` trở lại cho dòng lỗi, khớp theo (created_at, tool_name, open_id)
+  // — created_at là mốc micro-giây của Postgres nên bộ ba này định danh đủ chắc.
+  const argKey = (r) => `${r.created_at}|${r.tool_name}|${r.open_id || ''}`;
+  const argOf = new Map(errorArgs.map((r) => [argKey(r), r.args]));
+  for (const r of raw) if (r.ok === false) r.args = argOf.get(argKey(r)) ?? null;
 
   const scope = raw.filter(
     (r) => !SKIP_CLIENTS.has(r.client_id) && !r.tool_name.startsWith('__auth.') && r.tool_name !== 'canary_heartbeat',

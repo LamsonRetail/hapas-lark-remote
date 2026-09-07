@@ -115,7 +115,15 @@
        còn" là con số DUY NHẤT trên trang đòi hành động TRƯỚC khi hỏng. -->
   <div class="zone">Chi tiết</div>
   <section class="card pad">
-    <h2>Người dùng <span class="n" id="people-n"></span></h2>
+    <h2>
+      Người dùng <span class="n" id="people-n"></span>
+      <span class="spacer"></span>
+      <!-- Nút nằm TRONG HTML tĩnh, không dựng trong renderTop: khu vẽ lại mỗi
+           30s thì listener phải gắn lại mỗi vòng, và gắn lại là chồng lên nhau.
+           Ở đây nó không bao giờ bị dựng lại nên gắn đúng một lần lúc boot. -->
+      <button class="btn" id="p-renew" hidden>Gia hạn token sắp hết</button>
+    </h2>
+    <div class="fb-note" id="renew-note" hidden></div>
     <div class="scroll"><table class="wide" id="t-people"></table></div>
     <div id="people-pager"></div>
   </section>
@@ -817,6 +825,10 @@
       <td class="r num dim nw">${dt(p.last)}</td>
     </tr>`;
 
+  // Đặt property, KHÔNG dựng lại markup: nút nằm ngoài mọi khu setHtml nên nó
+  // sống qua từng vòng poll cùng với listener đã gắn lúc boot.
+  $('p-renew').hidden = !D.canRefresh;
+
   const drawPeople = () => {
     const { from } = pageOf('people', D.people.length);
     $('people-n').textContent = D.people.length ? `· ${nf(D.people.length)}` : '';
@@ -1195,7 +1207,7 @@
   // NẠP DỮ LIỆU
   // ══════════════════════════════════════════════════════════════════════════
 
-  const REFRESH_MS = 30000;
+  const REFRESH_MS = 60000;
   const stamp = (ok) => {
     $('stamp').innerHTML = ok
       ? `<span class="live"></span>Cập nhật <b>${new Date().toLocaleTimeString('vi-VN', { hour12: false })}</b>`
@@ -1283,9 +1295,91 @@
     stamp(!r.some((x) => x.status === 'rejected'));
   }
 
+  /**
+   * ── Gia hạn token sắp hết ────────────────────────────────────────────────
+   *
+   * Cột "Token còn" là con số duy nhất trên trang đòi hành động TRƯỚC khi hỏng,
+   * mà tới giờ hành động duy nhất là SSH vào máy chủ chạy `npm run keepalive`.
+   * Nút này đi đúng đường đó: /api/refresh (Vercel) → /admin/refresh (server) →
+   * xoay token thật rồi gọi `lark_whoami` bằng token vừa nhận.
+   *
+   * Ngưỡng 48h là ngưỡng của SERVER, không phải của trang: server đọc hạn thật
+   * trong store, còn cột trên bảng đọc `machines` nên có thể cũ hơn. Vì vậy kết
+   * quả trả về có thể nói "không ai dưới 48 giờ" trong khi bảng đang hiện mấy
+   * dòng đỏ — và đó là lúc tin server, rồi đọc lại bảng sau khi nó ghi hạn mới.
+   */
+  const TOKEN_KEY = 'mcp-dashboard-admin-token';
+  const RENEW_HOURS = 48;
+
+  /** Token chỉ sống trong localStorage của người vận hành, KHÔNG nướng vào trang. */
+  function adminToken() {
+    const t = (localStorage.getItem(TOKEN_KEY) || '').trim()
+      || (prompt('Token quản trị (DASHBOARD_ADMIN_TOKEN):') || '').trim();
+    if (t) localStorage.setItem(TOKEN_KEY, t);
+    return t;
+  }
+
+  function renewNote(html, sev) {
+    const el = $('renew-note');
+    el.style.color = `var(--${sev || 'warning'})`;
+    setHtml(el, html || '');
+    el.hidden = !html;
+  }
+
+  async function onRenew() {
+    const btn = $('p-renew');
+    if (!confirm(`Xoay token ngay cho những người còn dưới ${RENEW_HOURS} giờ?
+
+`
+      + 'Mỗi người một lượt gọi sang Lark. Không ai bị đăng xuất.')) return;
+
+    const token = adminToken();
+    if (!token) return;
+
+    const label = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = 'Đang gia hạn…';
+    renewNote('Đang gọi máy chủ — chờ tối đa một phút.', 'ink-3');
+    try {
+      const r = await fetch('/api/refresh', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-admin-token': token },
+        body: JSON.stringify({ hours: RENEW_HOURS }),
+      });
+      const j = await r.json().catch(() => ({}));
+      // Token sai thì XOÁ cái đã lưu, không thì lần bấm sau lại lặng lẽ gửi đúng
+      // cái token sai đó và người bấm không hiểu vì sao mãi không vào được.
+      if (r.status === 401) {
+        localStorage.removeItem(TOKEN_KEY);
+        throw new Error('Token quản trị không đúng — bấm lại để nhập token khác.');
+      }
+      if (!r.ok) throw new Error(j.error || 'HTTP ' + r.status);
+
+      const bits = [];
+      if (!j.matched) bits.push(`Không ai dưới ${j.thresholdH} giờ — cả ${j.users} phiên đều còn hạn dài.`);
+      else bits.push(`Đã gia hạn ${j.renewed.length}/${j.matched}: `
+        + j.renewed.map((x) => `${x.name} (${x.beforeH}h → ${x.afterH}h)`).join(', '));
+      if ((j.failed || []).length) bits.push('Không gia hạn được: '
+        + j.failed.map((x) => `${x.name} — ${x.reason}`).join('; '));
+      if ((j.expired || []).length) bits.push('Đã quá 7 ngày, phải tự đăng nhập lại: ' + j.expired.join(', '));
+
+      const bad = (j.failed || []).length || (j.expired || []).length;
+      renewNote(esc(bits.join(' · ')), bad ? 'warning' : 'good');
+      // Nạp lại NGAY, đừng để người bấm ngồi so con số cũ với dòng chữ mới.
+      await refreshQuiet();
+    } catch (e) {
+      renewNote(esc('Gia hạn thất bại: ' + e.message), 'critical');
+    } finally {
+      btn.disabled = false;
+      btn.textContent = label;
+    }
+  }
+
   (async function boot() {
     buildFilterBar();
     buildChartControls();
+    // Gắn MỘT lần, ở đây, cho cả đời trang — xem ghi chú cạnh chính cái nút.
+    $('p-renew').addEventListener('click', onRenew);
 
     if (STATIC) {
       DATA = BAKED;
@@ -1331,11 +1425,41 @@
       addEventListener(ev, () => { pressing = false; }, true);
     }
 
+    // "Mở tab rồi đi làm việc khác mà không chuyển tab" = tab đang HIỆN nhưng
+    // lâu không có tương tác. visibility không bắt được ca này, mà đây đúng là
+    // kiểu để egress rò rỉ cả ngày. Sau IDLE_MS không chạm chuột/phím thì ngưng
+    // poll; chạm lại (markActive) hoặc quay lại tab thì nạp ngay.
+    const IDLE_MS = 5 * 60000;
+    let lastActive = Date.now();
+    const markActive = () => {
+      const wasIdle = Date.now() - lastActive > IDLE_MS;
+      lastActive = Date.now();
+      if (wasIdle && !document.hidden && !calOpen && !pressing) refreshQuiet();
+    };
+    for (const ev of ['pointermove', 'pointerdown', 'keydown', 'wheel', 'touchstart']) {
+      addEventListener(ev, markActive, { passive: true });
+    }
+
     setInterval(() => {
+      // Tab ẩn thì KHÔNG poll. Một trang để nền (chuyển tab, thu nhỏ) vẫn poll
+      // đều là nguồn đốt egress lớn nhất mà không ai nhìn — đúng thứ đã làm
+      // Supabase vượt hạn mức. Quay lại tab sẽ nạp ngay qua listener bên dưới.
+      if (document.hidden) return;
+      // Tab hiện nhưng bỏ đó lâu không đụng tới thì cũng ngưng — nạp lại khi có
+      // tương tác trở lại hoặc khi quay lại tab.
+      if (Date.now() - lastActive > IDLE_MS) return;
       // Đang mở lịch thì hoãn: vẽ lại giữa chừng là lịch tự đóng dưới tay người
       // đang chọn dở.
       if (calOpen || pressing) return;
       refreshQuiet();
     }, REFRESH_MS);
+
+    // Quay lại tab sau khi để nền: nạp lại NGAY thay vì chờ hết một chu kỳ, để
+    // người xem không nhìn số cũ tới cả phút. Tính là vừa hoạt động luôn.
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) return;
+      lastActive = Date.now();
+      if (!calOpen && !pressing) refreshQuiet();
+    });
   })();
 </script>

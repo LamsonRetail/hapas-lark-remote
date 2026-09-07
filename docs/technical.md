@@ -137,6 +137,7 @@ hapas-lark-remote/
 │  ├─ supabase.js         URL + service key + sbFetch, dùng chung
 │  ├─ audit.js            gom lô, bắn nền, tự bỏ cột schema chưa có + auditAuth
 │  ├─ machines.js         ghi danh tính người dùng remote vào bảng machines
+│  ├─ admin.js            POST /admin/refresh — gia hạn token cho người sắp hết
 │  ├─ canary.js           9 probe đọc + 3 probe ghi mỗi giờ, DM khi hỏng
 │  ├─ canary-write.js     probe ghi: ghi → đọc lại đối chiếu → dọn sạch
 │  ├─ keepalive.js        xoay token 12h/lượt để phiên Lark không rụng sau 7 ngày
@@ -194,10 +195,43 @@ Mỗi tool phải nằm trong đúng một nhóm ở [hints.js](../src/tools/hin
 |---|---|---|
 | URL công khai | Tailscale Funnel, trong dịch vụ `tailscaled` | Tự sống qua reboot; supervisor không nuôi tiến trình tunnel nào |
 | Server | `supervisor.js` bật lại, backoff tăng dần | Chạy ổn > 2 phút thì reset bộ đếm — coi lần chết đó là sự cố lẻ |
+| Supervisor | `start-server.bat` bật lại sau 10s nếu node chết hẳn | Mã thoát 3 (cổng đã có server khác) thì dừng, không lặp vô ích |
+| Tunnel lúc khởi động | Chờ tailscaled sẵn sàng, backoff 5s → 60s, không bỏ đi | Trước đây thoát ngay: mất điện chiều 23/08/2026, autostart chạy đúng một lần rồi chết vì `BackendState=NoState` |
 | Sau reboot | Startup folder chạy `start-server.bat` | Chỉ chạy khi **đăng nhập** Windows, không phải khi bật máy |
 | Nhịp tim | 5 phút/lần: `/health` + đối chiếu funnel status | Funnel trỏ sai tên thì tự reset và dựng lại |
 
 `/health` xanh **không** có nghĩa người ngoài vào được. Đã dính đúng thế khi đổi tên máy Tailscale: hostname đổi nhưng serve config vẫn ghim tên cũ — server báo sống trong khi URL công khai đã chết. Nhịp tim vì vậy phải kiểm cả hai.
+
+### Gia hạn token sắp hết — nút trên dashboard
+
+`keepalive` xoay token cho mọi người mỗi 12h, nên bình thường không ai chạm ngưỡng. Nút này cho đường **chạy tay** khi vừa dựng lại server sau một đợt tắt dài và không muốn đợi lượt kế tiếp:
+
+```
+trình duyệt ──DASHBOARD_ADMIN_TOKEN──▶ /api/refresh (Vercel)
+                                          │ MCP_ADMIN_TOKEN
+                                          ▼
+                          POST /admin/refresh (server MCP)
+                                          │
+                       forceRefresh ─▶ lark_whoami ─▶ publishTokenExpiry
+```
+
+**Hai token, hai lớp.** Trình duyệt không bao giờ giữ token của server: nó gửi `DASHBOARD_ADMIN_TOKEN` (người vận hành dán tay, nằm trong localStorage) tới hàm serverless, và chỉ hàm đó biết `MCP_ADMIN_TOKEN`. Đổi lại được thêm một thứ miễn phí: không phải dựng CORS trên server MCP.
+
+**Vì sao mở lại một đường ghi ra internet**, sau khi [oauth-as.js](../src/oauth-as.js) đã bỏ `/admin/revoke` đúng vì lý do này: blast radius khác hẳn. Thu hồi là phá được phiên của người khác; gia hạn thì tệ nhất chỉ làm đúng việc `keepalive` vẫn tự làm mỗi 12h. Kẻ có token cũng không đọc được dữ liệu của ai, không thu hồi được của ai, không cắm thêm connector nào. Chưa đặt `ADMIN_TOKEN` thì route **không tồn tại** (404, không phải 401), và mỗi lúc chỉ một lượt chạy — bấm mười lần thì chín lần nhận 409.
+
+**`forceRefresh`, không phải đường tool call thường.** Cửa sổ 7 ngày chỉ trượt khi ta thật sự gọi token endpoint. Access token sống 2 tiếng, nên gọi `lark_whoami` ngay sau một lượt keepalive sẽ dùng lại token còn hạn và **không xoay gì cả** — nút sẽ báo thành công trong khi hạn đứng nguyên. Xoay trước, rồi mới `whoami` bằng token vừa nhận: token endpoint trả 200 mà token không dùng được là chuyện có thật, và đó đúng là thứ phải biết trước khi báo với cả phòng là đã gia hạn.
+
+**Ngưỡng đọc từ store, không đọc từ dashboard.** Xem mục dưới.
+
+### Cột "Token còn" từng nói dối
+
+`machines.token_expires_at` là chỗ DUY NHẤT dashboard nhìn thấy được hạn refresh token — hạn thật nằm trong `tokens.json` mã hoá trên máy chủ, Supabase không có đường nào chạm tới. Nhưng cột đó chỉ được ghi lúc có **sự kiện auth hoặc tool call**, nên với ai nghỉ vài ngày thì nó đứng lại ở ảnh chụp cũ.
+
+Chiều 23/08/2026 dashboard hiện 7 người "còn 10–41h" trong khi keepalive vừa xoay token cho cả 39 người và store ghi 168h cho tất cả. Con số duy nhất trên trang đòi hành động **trước** khi hỏng lại là con số sai — và sai về phía báo động giả, nên lần báo động thật sẽ bị bỏ qua cùng với nó.
+
+Vì vậy `publishTokenExpiry()` được gọi từ **mọi** đường xoay token, không riêng đường tool call: cuối mỗi lượt keepalive (cho mọi người còn phiên, không chỉ người vừa gia hạn) và sau mỗi lần nút gia hạn chạy. Nó KHÔNG đụng `last_seen` — cột đó trả lời "lần cuối người này thật sự có mặt", để keepalive dập lên mỗi 12h thì cả bảng vĩnh viễn "vừa thấy 2 phút trước".
+
+Hệ quả cần nhớ khi đọc trang: ngưỡng "dưới 48h" của nút là ngưỡng của **server** (đọc store), còn cột trên bảng đọc `machines`. Nút có thể trả về "không ai dưới 48 giờ" trong khi bảng đang hiện mấy dòng đỏ — lúc đó tin server, và bảng sẽ đúng ngay sau khi nó ghi hạn mới.
 
 ### Ba thứ ghi vào Supabase
 

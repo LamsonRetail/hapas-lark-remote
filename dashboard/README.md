@@ -11,7 +11,16 @@ biểu đồ                            nhóm theo × đo bằng × kiểu vẽ
 bảng người · bảng số liệu nhóm
 ```
 
-Chỉ ĐỌC. Thu hồi truy cập dùng `npm run revoke` chạy tại chỗ.
+Gần như chỉ ĐỌC: thao tác ghi duy nhất là nút **Gia hạn token sắp hết** cạnh tiêu
+đề bảng người — nó gọi `/api/refresh` → `/admin/refresh` trên server MCP để xoay
+token cho ai còn dưới 48h. Nút chỉ hiện khi `/api/data` báo `canRefresh`, tức là
+đã đặt đủ `DASHBOARD_ADMIN_TOKEN` + `MCP_SERVER_URL` + `MCP_ADMIN_TOKEN` trên
+Vercel. Token quản trị người vận hành dán tay, giữ trong localStorage, KHÔNG nướng
+vào trang. Thu hồi truy cập vẫn phải dùng `npm run revoke` chạy tại chỗ.
+
+Ngưỡng 48h là ngưỡng của SERVER (đọc hạn thật trong store), còn cột "Token còn"
+đọc `machines` nên có thể cũ hơn — xem `docs/technical.md`, mục "Cột Token còn
+từng nói dối".
 
 ```
 base.css              giao diện; build nhúng thẳng vào trang
@@ -26,6 +35,7 @@ build.mjs             dựng preview.html + index.html + tools.json
 dev.mjs               chạy tại chỗ BẢN ĐẦY ĐỦ — gọi thẳng api/, bộ lọc chạy thật
 api/data.js           số liệu tầng trên
 api/explore.js        gộp số theo cột được chọn
+api/refresh.js        chuyển tiếp lệnh gia hạn token sang server MCP
 ```
 
 `/*__DATA__*/null`, `/*__SCHEMA__*/null`, `/*__EXPLORE__*/null` và `/*__CSS__*/`
@@ -207,6 +217,9 @@ npx.cmd vercel --prod --yes --scope hapas-tech-team --cwd dashboard
 |---|---|
 | `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` | Nguồn số liệu. **Chỉ ở phía máy chủ** |
 | `LARK_APP_ID` | Hiển thị ở chân trang |
+| `DASHBOARD_ADMIN_TOKEN` | Cổng cho mọi endpoint có ghi. Người vận hành dán tay trên trang |
+| `MCP_SERVER_URL` | `PUBLIC_URL` của server MCP — `api/refresh.js` gọi sang đó |
+| `MCP_ADMIN_TOKEN` | Bằng `ADMIN_TOKEN` trong `.env` của server. **Không bao giờ** đi xuống trình duyệt |
 
 `.vercelignore` chặn `preview.html` và `.env*` khỏi gói deploy. Đừng bỏ nó:
 `.gitignore` chỉ chắn đường vào git, Vercel CLI không đọc file đó, nên thiếu

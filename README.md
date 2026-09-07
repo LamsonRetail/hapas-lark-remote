@@ -128,6 +128,44 @@ riêng mã lỗi Lark để lọc: `99991663` (user thiếu quyền) là chuyệ
 Probe chỉ được phép là tool ĐỌC. Nó chạy mỗi giờ, mãi mãi — thêm tool có tác dụng
 phụ vào đây là tự tạo rác tích tụ.
 
+## Giữ phiên Lark sống
+
+Refresh token của Lark là cửa sổ **trượt**: mỗi lần xoay được cấp lại 7 ngày trọn
+vẹn. `KEEPALIVE_EVERY_HOURS=12` nên chỉ cần chạm vào một lần trong 7 ngày là phiên
+sống mãi — ai nghỉ dài cũng không phải quét mã lại.
+
+Đánh đổi đã chấp nhận: phiên sống tới khi **có người chủ động thu hồi**, nên
+`npm run revoke` là bắt buộc trong quy trình offboarding, không còn là "nên làm".
+
+Chạy tay ngay một lượt: `npm run keepalive`.
+
+### Nút "Gia hạn token sắp hết" trên dashboard
+
+Dùng khi vừa dựng lại server sau một đợt tắt dài và không muốn đợi lượt keepalive
+kế tiếp. Nó xoay token cho mọi người còn **dưới 48 giờ**, rồi gọi `lark_whoami`
+bằng token vừa nhận để chắc token thật sự dùng được.
+
+Bật bằng bốn biến — thiếu một cái là nút không hiện:
+
+| Biến | Ở đâu | Là gì |
+|---|---|---|
+| `ADMIN_TOKEN` | `.env` của server | Chưa đặt thì `POST /admin/refresh` **không tồn tại** (404) |
+| `MCP_ADMIN_TOKEN` | Vercel | Đúng bằng `ADMIN_TOKEN` ở trên |
+| `MCP_SERVER_URL` | Vercel | Bằng `PUBLIC_URL` của server |
+| `DASHBOARD_ADMIN_TOKEN` | Vercel | Token người vận hành dán tay trên trang |
+
+Sinh token: `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`.
+
+Trình duyệt **không bao giờ** giữ `MCP_ADMIN_TOKEN`: trang gửi
+`DASHBOARD_ADMIN_TOKEN` tới `/api/refresh` trên Vercel, chỉ hàm đó gọi sang server.
+Chi tiết và lý do mở lại một đường ghi ra internet: [docs/technical.md](docs/technical.md), mục 5.
+
+Gọi thẳng không qua trang:
+
+```bash
+curl -X POST -H "x-admin-token: $ADMIN_TOKEN" -H "content-type: application/json"   -d '{"hours":48}' https://<PUBLIC_URL>/admin/refresh
+```
+
 ## Còn thiếu
 
 - Server vẫn chạy trên một máy Windows. Muốn hết phụ thuộc máy đó thì phải

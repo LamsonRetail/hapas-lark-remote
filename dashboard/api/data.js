@@ -14,7 +14,8 @@ import toolNames from '../tools.json' with { type: 'json' };
  * Biến môi trường cần đặt trên Vercel:
  *   SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY   — nguồn số liệu
  *   LARK_APP_ID                               — chỉ để hiển thị
- *   DASHBOARD_ADMIN_TOKEN                     — cổng cho api/hidden.js
+ *   DASHBOARD_ADMIN_TOKEN                     — cổng cho mọi endpoint có ghi
+ *   MCP_SERVER_URL, MCP_ADMIN_TOKEN           — để api/refresh.js gọi được server
  */
 export default async function handler(req, res) {
   if (!requireSupabase(res)) return;
@@ -35,13 +36,28 @@ export default async function handler(req, res) {
       user: String(req.query?.user || '').slice(0, 200),
       app: String(req.query?.app || '').slice(0, 80),
     });
-    // KHÔNG cache. Trang poll lại mỗi 30s để theo dõi real-time, mà `s-maxage`
-    // thì bảo CDN giữ bản cũ tới 60s + phục vụ stale thêm 120s — poll xong vẫn
-    // nhận đúng bản cũ đó, tưởng hệ thống đứng yên trong khi nó đang chạy.
-    // `no-store` ở vercel.json chỉ chặn cache phía trình duyệt, không chặn edge.
-    res.setHeader('Cache-Control', 'no-store');
-    // Trang cần biết nút ẩn có dùng được không, mà KHÔNG được biết token là gì.
-    res.json({ ...data, canWrite: Boolean((process.env.DASHBOARD_ADMIN_TOKEN || '').trim()) });
+    // Cache Ở EDGE, có chủ đích. Trước đây để `no-store` vì "real-time", nhưng
+    // mỗi tab poll lại kéo NGUYÊN cửa sổ audit từ Supabase — đó chính là thứ đẩy
+    // egress vượt hạn mức và suýt bị khoá project. Giờ để edge giữ một bản ~50s:
+    // N tab / N người xem trùng nhau gộp còn ĐÚNG một lần đọc Supabase mỗi khoảng
+    // đó. `max-age=0` nên trình duyệt không tự giữ bản cũ; poll cách nhau 60s nên
+    // staleness tối đa ~một chu kỳ — chấp nhận được cho bảng vận hành, rẻ hơn
+    // nhiều so với bị Supabase restrict. stale-while-revalidate: trả bản gần đúng
+    // ngay rồi làm mới ở nền, người xem không phải chờ vòng đọc lại.
+    res.setHeader('Cache-Control', 'public, max-age=0, s-maxage=50, stale-while-revalidate=120');
+    /**
+     * Trang cần biết nút nào dùng được, mà KHÔNG được biết token là gì.
+     *
+     * `canRefresh` đòi đủ CẢ BA biến: thiếu một cái là nút bấm vào chỉ để nhận
+     * 503. Nút không hiện thì người vận hành đi đọc lỗi ở đâu — nên chỗ nào tắt
+     * nút, chỗ đó phải nói được vì sao, xem `refreshNote` trong template.
+     */
+    const dashToken = (process.env.DASHBOARD_ADMIN_TOKEN || '').trim();
+    res.json({
+      ...data,
+      canWrite: Boolean(dashToken),
+      canRefresh: Boolean(dashToken && (process.env.MCP_SERVER_URL || '').trim() && (process.env.MCP_ADMIN_TOKEN || '').trim()),
+    });
   } catch (e) {
     res.status(502).json({ error: e.message });
   }

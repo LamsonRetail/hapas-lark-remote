@@ -39,9 +39,10 @@ for (const k of ['SUPABASE_URL', 'SUPABASE_SERVICE_ROLE_KEY']) {
   }
 }
 
-const [data, explore] = await Promise.all([
+const [data, explore, refresh] = await Promise.all([
   import('./api/data.js').then((m) => m.default),
   import('./api/explore.js').then((m) => m.default),
+  import('./api/refresh.js').then((m) => m.default),
 ]);
 
 const TYPES = { '.html': 'text/html; charset=utf-8', '.css': 'text/css', '.js': 'text/javascript', '.json': 'application/json' };
@@ -68,6 +69,22 @@ const server = http.createServer(async (req, res) => {
   try {
     if (url.pathname === '/api/data') { await data({ query }, shim(res)); return log('data'); }
     if (url.pathname === '/api/explore') { await explore({ query }, shim(res)); return log('explore'); }
+    /**
+     * /api/refresh cần cả header (token quản trị) và body (ngưỡng giờ) — hai
+     * thứ mà Vercel dựng sẵn cho handler còn `http` thuần thì không. Đọc tay ở
+     * đây, đúng một chỗ, để bản dev vẫn bấm được cái nút thật.
+     */
+    if (url.pathname === '/api/refresh') {
+      const raw = await new Promise((ok) => {
+        let buf = '';
+        req.on('data', (c) => { buf += c; if (buf.length > 4096) buf = buf.slice(0, 4096); });
+        req.on('end', () => ok(buf));
+      });
+      let body = {};
+      try { body = raw ? JSON.parse(raw) : {}; } catch { /* body rác thì coi như rỗng, handler tự kẹp ngưỡng */ }
+      await refresh({ method: req.method, headers: req.headers, query, body }, shim(res));
+      return log('refresh');
+    }
   } catch (e) {
     // In nguyên stack ra terminal. Một endpoint chết im lặng ở bản dev là đúng
     // thứ làm mất cả buổi chiều đi tìm lỗi trong JS của trang.

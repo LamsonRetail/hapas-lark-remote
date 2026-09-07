@@ -54,10 +54,15 @@ export default async function handler(req, res) {
     `audit_logs?created_at=gte.${since}&created_at=lt.${until}${filter}`
     + `&select=${cols.join(',')}&order=created_at.asc&limit=1000&offset=${off}`,
   );
-  const WITHOUT = EXPLORE_COLS.filter((c) => c !== 'client_app');
+  // `args` là cột NẶNG NHẤT bảng và chỉ impact.mjs cần tới — mà cũng chỉ cho
+  // dòng LỖI. Đây là endpoint bị poll đều, nên kéo args cho cả nghìn dòng thành
+  // công mỗi lượt là nguồn đốt egress. Bỏ args khỏi lần đọc chính; hỏi riêng cho
+  // tập ok=false rồi khớp ngược lại. args vẫn KHÔNG đi xuống trình duyệt.
+  const LIGHT = EXPLORE_COLS.filter((c) => c !== 'args');
+  const WITHOUT = LIGHT.filter((c) => c !== 'client_app');
 
   try {
-    let cols = EXPLORE_COLS;
+    let cols = LIGHT;
     const rows = [];
     // PostgREST trả tối đa 1000 dòng một lần. Trần 200k là chốt chặn cho vòng
     // lặp, không phải giới hạn thiết kế — 90 ngày hiện ở mức vài nghìn dòng.
@@ -74,7 +79,23 @@ export default async function handler(req, res) {
       if (chunk.length < 1000) break;
     }
 
-    res.setHeader('Cache-Control', 'no-store');
+    // args chỉ cho dòng lỗi — tập nhỏ, có index riêng cho ok=false. Khớp lại
+    // theo (created_at, tool_name, client_id): created_at là mốc micro-giây nên
+    // bộ ba này định danh đủ chắc để gắn args về đúng dòng.
+    const errRows = [];
+    for (let off = 0; off < 200000; off += 1000) {
+      const chunk = await sb(
+        `audit_logs?created_at=gte.${since}&created_at=lt.${until}${filter}&ok=eq.false`
+        + `&select=created_at,tool_name,client_id,args&order=created_at.asc&limit=1000&offset=${off}`,
+      );
+      errRows.push(...chunk);
+      if (chunk.length < 1000) break;
+    }
+    const aKey = (r) => `${r.created_at}|${r.tool_name}|${r.client_id || ''}`;
+    const aOf = new Map(errRows.map((r) => [aKey(r), r.args]));
+    for (const r of rows) if (r.ok === false) r.args = aOf.get(aKey(r)) ?? null;
+
+    res.setHeader('Cache-Control', 'public, max-age=0, s-maxage=50, stale-while-revalidate=120');
     res.json({
       generatedAt: new Date().toISOString(),
       range: { from: range.from, to: range.to, preset: range.preset, days: range.days, clamped: range.clamped },
