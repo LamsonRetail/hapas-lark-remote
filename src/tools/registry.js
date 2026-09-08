@@ -140,7 +140,20 @@ export function registerAll(server, specs, getToken, actor = {}) {
          * client, mà tỉ lệ ký tự/token thì khác nhau theo model. Ước lượng token
          * là việc của tầng đọc, và ở đó phải nói rõ là ước lượng.
          */
-        const text = typeof out === 'string' ? out : JSON.stringify(out, null, 2);
+        /**
+         * KHÔNG in đẹp (`null, 2`).
+         *
+         * Chuỗi này đi thẳng vào cửa sổ ngữ cảnh của model, không ai đọc bằng
+         * mắt. Đo trên 200 bản ghi Bitable thật: in đẹp 49.264 token, gọn
+         * 36.442 — tức 26% số token là thụt lề thuần tuý. Với lượt gọi
+         * `base_record_list` 96k token đã ghi được, đó là ~25 nghìn token cho
+         * dấu cách.
+         *
+         * Vẫn là JSON hợp lệ, model phân tích y như cũ. Bốn chỗ `null, 2` khác
+         * trong src/ là ghi FILE trên đĩa (canary, keepalive, oauth, store) —
+         * những file đó người đọc trực tiếp nên giữ nguyên in đẹp.
+         */
+        const text = typeof out === 'string' ? out : JSON.stringify(out);
         done(true, null, null, text.length);
         return { content: [{ type: 'text', text }] };
       } catch (e) {

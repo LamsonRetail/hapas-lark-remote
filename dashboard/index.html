@@ -693,6 +693,24 @@ h2 .seg-sm { align-self: center; }
        "Cắm bằng" và "Token còn" đến từ bảng `machines`, không nằm trong
        audit_logs nên không có phép gộp nào dựng lại được chúng. Riêng "Token
        còn" là con số DUY NHẤT trên trang đòi hành động TRƯỚC khi hỏng. -->
+  <!-- ══ Bảng tổng quan theo TOOL ═══════════════════════════════════════════
+       MỘT chiều, nhiều phép đo. Mỗi dòng là một tool, mỗi cột là một con số về
+       chính tool đó.
+
+       Khác hẳn bảng CSV cũ: bảng đó có cột "Chiều" trộn cả ngày, người, tool,
+       ứng dụng vào chung một danh sách — nên hai dòng cạnh nhau có thể là
+       "Ngày = 2026-08-10" và "Tool = base_record_list", hai thứ không so sánh
+       được với nhau. Cộng dồn hay xếp hạng trên bảng đó đều vô nghĩa.
+
+       Chọn TOOL làm chiều vì đây là thực thể sửa được: thấy một tool trả về
+       69k token mỗi lượt thì có việc để làm. Chiều "người" đã có bảng riêng
+       (ẩn sau KPI "Người đã cắm") — mỗi bảng đúng một chiều.
+  ══════════════════════════════════════════════════════════════════════════ -->
+  <section class="card pad" id="tool-card">
+    <h2>Tổng quan theo tool <span class="n" id="tool-n"></span></h2>
+    <div class="scroll"><table class="wide" id="t-tool"></table></div>
+  </section>
+
   <!-- KHÔNG có vạch "Chi tiết" ở đây nữa: bảng bên dưới ẩn mặc định, nên vạch
        đứng một mình dưới đáy trang như một khu rỗng — người đọc tưởng trang lỗi
        hoặc chưa tải xong. Bấm KPI mới hiện, và lúc đó bảng tự có tiêu đề. -->
@@ -1770,7 +1788,7 @@ h2 .seg-sm { align-self: center; }
    * còn đường nào đi vòng qua được.
    */
   async function loadExplore() {
-    if (STATIC) { PANELS = BAKED_EX || null; drawPanels(); return; }
+    if (STATIC) { PANELS = BAKED_EX || null; drawPanels(); drawToolTable(); return; }
     try {
       /**
        * MỘT lời gọi lấy cả 6 chiều, dùng chung cho 10 biểu đồ và cho nút CSV.
@@ -1781,6 +1799,7 @@ h2 .seg-sm { align-self: center; }
        */
       PANELS = await getJson(`/api/explore?dims=${PANEL_DIMS.join(',')}&` + filterQuery());
       drawPanels();
+      drawToolTable();
     } catch (e) {
       for (const s of PANEL_SPECS) {
         const box = $(s.el);
@@ -1790,24 +1809,46 @@ h2 .seg-sm { align-self: center; }
   }
 
   /**
-   * Xuất CSV đủ 6 chiều × mọi phép đo, THEO BỘ LỌC đang bật.
+   * ── Bảng tổng quan theo tool ───────────────────────────────────────────
+   * MỘT chiều (tool), nhiều phép đo. Xem ghi chú ở #tool-card về việc vì sao
+   * không trộn nhiều chiều vào chung một bảng.
+   */
+  const TOOL_FACTS = ['calls', 'blocked', 'blockRate', 'p50', 'p95', 'tokens', 'tokensAvg', 'users'];
+  const toolFacts = () => TOOL_FACTS.map((k) => MEASURES.find((m) => m.key === k)).filter(Boolean);
+  const toolRows = () => PANELS?.byDim?.tool_name?.rows || [];
+
+  function drawToolTable() {
+    const rows = toolRows(), F = toolFacts();
+    $('tool-n').textContent = rows.length ? `${nf(rows.length)} tool` : '';
+    setHtml($('t-tool'), !rows.length
+      ? '<tbody><tr><td class="dim">Không có tool nào trong khoảng này.</td></tr></tbody>'
+      : '<thead><tr><th>Tool</th>' + F.map((m) => `<th class="r nw">${esc(m.label)}</th>`).join('')
+        + '<th class="r nw">Gần nhất</th></tr></thead><tbody>'
+        + rows.map((r) => `<tr><td class="mono">${esc(cut(String(r.key), 44))}</td>`
+          + F.map((m) => `<td class="r num">${esc(fmt(r[m.key], m.fmt))}</td>`).join('')
+          + `<td class="r num dim nw">${dt(r.last)}</td></tr>`).join('')
+        + '</tbody>');
+  }
+
+  /**
+   * Xuất CSV ĐÚNG bảng đang hiện: chiều là tool, các cột là phép đo.
    *
-   * Dùng lại `PANELS` — không gọi Supabase thêm lần nào, và vì thế file tải về
-   * luôn khớp đúng những gì đang hiện trên màn hình.
+   * Bản trước xuất cả 6 chiều vào một tệp với cột "Chiều", nên trong cùng một
+   * cột "Nhóm" có lẫn ngày, tên người, tên tool. Mở bằng Excel thì không lọc,
+   * không cộng, không xếp hạng được gì mà không phải tự tay tách ra trước.
+   *
+   * Muốn số của chiều khác thì lọc rồi xuất lại — cái tải về luôn là cái đang
+   * thấy trên màn hình.
    */
   function downloadCsv() {
-    if (!PANELS?.byDim) return;
-    const rows = [];
-    for (const key of PANEL_DIMS) {
-      const d = dimOf(key);
-      for (const r of PANELS.byDim[key]?.rows || []) rows.push({ dimLabel: d.label, ...r });
-    }
+    const rows = toolRows(), F = toolFacts();
     if (!rows.length) return;
-    // Bọc mọi ô trong ngoặc kép: tên người có dấu phẩy, Excel sẽ tách nhầm cột.
+    // Bọc mọi ô trong ngoặc kép: tên tool không có dấu phẩy nhưng nhãn cột thì
+    // có, và Excel sẽ tách nhầm cột.
     const q = (v) => '"' + String(v ?? '').replace(/"/g, '""') + '"';
-    const head = ['Chiều', 'Nhóm', ...MEASURES.map((m) => m.label), 'Gần nhất'];
+    const head = ['Tool', ...F.map((m) => m.label), 'Gần nhất'];
     const csv = [head.map(q).join(','), ...rows.map((r) =>
-      [r.dimLabel, r.key, ...MEASURES.map((m) => r[m.key] ?? ''), r.last || ''].map(q).join(','))].join('\r\n');
+      [r.key, ...F.map((m) => r[m.key] ?? ''), r.last || ''].map(q).join(','))].join('\r\n');
     // BOM: thiếu nó là Excel mở ra tiếng Việt thành ký tự rác.
     const url = URL.createObjectURL(new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' }));
     const a = document.createElement('a');
@@ -1815,7 +1856,7 @@ h2 .seg-sm { align-self: center; }
     // Tên file mang theo cả bộ lọc: hai lần tải về cùng tên mà khác nội dung là
     // kiểu nhầm không ai truy ra được sau một tuần.
     a.href = url;
-    a.download = ['mcp', r.from, r.to, FILTER.user && 'nguoi', FILTER.app, FILTER.tool]
+    a.download = ['mcp', 'tool', r.from, r.to, FILTER.user && 'nguoi', FILTER.app, FILTER.tool]
       .filter(Boolean).join('-') + '.csv';
     a.click();
     URL.revokeObjectURL(url);

@@ -33,13 +33,24 @@ const quant = (s, q) => (s.length ? s[Math.min(s.length - 1, Math.floor(s.length
  * và số" tệ nhất (2,25) chính vì thế, không phải do tiếng Việt. Dùng 4 thì
  * thiếu khoảng 40% số token thật.
  *
- * Dải đo được là 2,23–2,64, tức ±9% quanh 2,4 — đủ ổn định để quy đổi.
+ * ĐO LẠI 08/09/2026 sau khi bỏ in đẹp ở registry.js. Hệ số 2,4 ban đầu đo trên
+ * mẫu nhỏ và cho dải ±9% — con số đó quá lạc quan. Đo trên tập lớn hơn:
+ *
+ *   Bitable 200 bản ghi, CÒN thụt lề  → 3,34–3,44 ký tự/token
+ *   Bitable 200 bản ghi, ĐÃ bỏ thụt lề → 2,72
+ *
+ * Dải thật là 2,23–3,44 tuỳ nội dung, rộng hơn nhiều so với ±9% tôi từng nói.
+ * Chuỗi dài toàn dấu cách gộp được thành ít token, nên bản in đẹp có tỉ lệ CAO
+ * hơn — và dùng 2,4 cho dữ liệu đó là ước tính token cao hơn thực tế ~40%.
+ *
+ * Bỏ thụt lề xoá đúng nguồn gây lệch lớn nhất, nên giờ chốt 2,7 theo số đo trên
+ * dữ liệu đã gọn.
  *
  * CÒN LẠI MỘT SAI SỐ KHÔNG ĐO ĐƯỢC: đây là tokenizer của GPT, không phải của
  * Claude. Hai bên cùng họ BPE và cùng tầm nhưng không trùng nhau. Nên vẫn là
  * ƯỚC LƯỢNG — chỉ là ước lượng đã hiệu chỉnh bằng số đo, thay vì đoán.
  */
-const CHARS_PER_TOKEN = 2.4;
+const CHARS_PER_TOKEN = 2.7;
 
 /** clientId của công cụ chạy tại chỗ — cùng danh sách computeDashboard loại ra. */
 export const SKIP_CLIENTS = new Set(['local-admin', 'canary', 'revoke-test-a']);
