@@ -40,7 +40,12 @@ export default [
   // ── Bản ghi ───────────────────────────────────────────────────────────
   {
     name: 'base_record_list',
-    desc: '[BASE] Đọc bản ghi trong một bảng Base.',
+    desc: '[BASE] Đọc bản ghi trong một bảng Base. '
+      + 'LUÔN truyền `fields` với đúng những cột cần: bảng thực tế có thể tới 127 cột, '
+      + 'và 200 bản ghi đủ cột đã là ~400KB (~118 nghìn token, hơn nửa cửa sổ ngữ cảnh). '
+      + 'Chọn 3–4 cột thì giảm khoảng 97%. '
+      + 'Chưa biết tên cột thì gọi trước một lượt `limit: 1` không kèm `fields` — '
+      + 'phản hồi có mảng `fields` liệt kê đủ tên cột và chỉ tốn vài KB.',
     schema: {
       base_token: z.string(),
       table_id: z.string(),
@@ -48,10 +53,54 @@ export default [
       // 200`); schema cũ cho tới 500 nên limit 201–500 ra lỗi khó hiểu.
       limit: z.number().int().min(1).max(200).optional(),
       offset: z.number().int().optional(),
+      fields: z.array(z.string()).optional()
+        .describe('Tên cột cần lấy. Bỏ trống là lấy HẾT — rất tốn ngữ cảnh.'),
     },
-    method: 'GET',
-    path: '/open-apis/base/v3/bases/{base_token}/tables/{table_id}/records',
-    query: ['limit', 'offset'],
+    /**
+     * Lọc cột Ở PHÍA MÌNH, không nhờ Lark.
+     *
+     * Đã thử: endpoint GET này BỎ QUA mọi tham số chọn cột (`field_ids`,
+     * `field_names`, `fields`, `field_id_list` — cả dạng JSON lẫn CSV đều trả
+     * đủ 127 cột, `query_context.field_scope` vẫn là `all_fields`). Còn
+     * `base_data_query` chọn được cột nhưng đòi quyền ADMIN trên Base
+     * (`800004011: does not have admin`), nên phần lớn người dùng không gọi nổi.
+     *
+     * May là phản hồi v3 có dạng bảng: `data.data` là mảng-các-mảng, kèm
+     * `fields` / `field_id_list` / `field_type_list` song song theo cùng thứ tự
+     * cột. Nên cắt theo chỉ số cột là đủ và không mất mát gì.
+     *
+     * Vẫn tải đủ 400KB từ Lark về — chỗ đó mình không đổi được. Nhưng thứ đi
+     * vào cửa sổ ngữ cảnh của model thì giảm đúng theo số cột đã chọn, mà đó
+     * mới là chỗ đang đau: một lượt gọi ăn 59% ngữ cảnh.
+     */
+    handler: async (a, api) => {
+      const r = await api.get(
+        `/open-apis/base/v3/bases/${encodeURIComponent(a.base_token)}/tables/${encodeURIComponent(a.table_id)}/records`,
+        { params: { limit: a.limit, offset: a.offset } },
+      );
+      const d = r?.data;
+      if (!a.fields?.length || !Array.isArray(d?.data) || !Array.isArray(d?.fields)) return r;
+
+      const muon = new Set(a.fields);
+      const idx = d.fields.map((t, i) => (muon.has(t) ? i : -1)).filter((i) => i >= 0);
+      // Không cột nào khớp thì trả nguyên bản kèm danh sách cột có thật — im
+      // lặng trả về bảng rỗng sẽ đọc thành "bảng không có dữ liệu".
+      if (!idx.length) {
+        return { ...r, _canh_bao: `Không cột nào khớp \`fields\`. Cột có thật: ${d.fields.join(', ')}` };
+      }
+      const lay = (arr) => (Array.isArray(arr) ? idx.map((i) => arr[i]) : arr);
+      return {
+        ...r,
+        data: {
+          ...d,
+          data: d.data.map(lay),
+          fields: lay(d.fields),
+          field_id_list: lay(d.field_id_list),
+          field_type_list: lay(d.field_type_list),
+          _da_loc_cot: `${idx.length}/${d.fields.length}`,
+        },
+      };
+    },
   },
   {
     name: 'base_record_create',
