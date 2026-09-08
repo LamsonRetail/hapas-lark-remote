@@ -665,9 +665,17 @@ h2 .seg-sm { align-self: center; }
          hơn nhiều một tool chạy 3 giây trả về một dòng. -->
     <div class="card pad panel" data-panel="context">
       <h2>Ngữ cảnh</h2>
+      <!-- Hai TRỤC KHÁC NHAU, không phải hai lát cắt cùng chiều.
+           Cắt cả hai theo tool thì chỉ biết "tool nào to", không biết đó là một
+           người kéo cả bảng Base hay cả phòng cùng dùng nhẹ — hai chuyện xử lý
+           khác hẳn nhau.
+
+           Tổng cho người, TRUNG BÌNH cho tool: một tool gọi 2 lần mà mỗi lần
+           96k token sẽ chìm dưới tool gọi 500 lần mỗi lần 200 token nếu cũng
+           lấy tổng. Còn với người thì tổng mới là khối lượng thật họ đốt. -->
       <div class="p-grid">
-        <div class="p-one"><div class="p-t">Ký tự trả về theo tool</div><div class="p-c" id="p-chars-tool"></div></div>
-        <div class="p-one"><div class="p-t">Ký tự trả về mỗi lượt, theo tool</div><div class="p-c" id="p-charsavg-tool"></div></div>
+        <div class="p-one"><div class="p-t">Token theo người</div><div class="p-c" id="p-tokens-user"></div></div>
+        <div class="p-one"><div class="p-t">Token mỗi lượt, theo tool</div><div class="p-c" id="p-tokensavg-tool"></div></div>
       </div>
     </div>
 
@@ -729,7 +737,7 @@ h2 .seg-sm { align-self: center; }
   // Danh mục cột/phép đo/mốc sẵn, build.mjs nướng vào từ explore-schema.mjs +
   // range.mjs — trang KHÔNG tự khai lại, nếu không nó sẽ chào một lựa chọn mà
   // máy chủ từ chối.
-  const SCHEMA = {"DIMENSIONS":[{"key":"day","label":"Ngày","col":null,"time":true},{"key":"hour","label":"Giờ trong ngày","col":null,"time":true},{"key":"user_name","label":"Người gọi","col":"user_name"},{"key":"tool_name","label":"Tool","col":"tool_name","mono":true},{"key":"client_app","label":"Ứng dụng","col":null},{"key":"ok","label":"Kết quả","col":"ok"}],"MEASURES":[{"key":"calls","label":"Lượt gọi","fmt":"int"},{"key":"blocked","label":"Không dùng được","fmt":"int","zeroable":true},{"key":"blockRate","label":"Tỉ lệ không dùng được","fmt":"pct","zeroable":true},{"key":"p50","label":"Thời gian trung vị","fmt":"ms"},{"key":"p95","label":"Thời gian p95","fmt":"ms"},{"key":"users","label":"Số người khác nhau","fmt":"int"},{"key":"tools","label":"Số tool khác nhau","fmt":"int"},{"key":"chars","label":"Ký tự trả về","fmt":"int"},{"key":"charsAvg","label":"Ký tự trả về / lượt","fmt":"int"},{"key":"tokens","label":"Token ước tính (≈ ký tự / 2,4)","fmt":"int"}],"PRESETS":[{"key":"today","label":"Hôm nay","days":1},{"key":"7d","label":"7 ngày","days":7},{"key":"30d","label":"30 ngày","days":30},{"key":"90d","label":"90 ngày","days":90}],"DEFAULT_PRESET":"30d","MAX_RANGE_DAYS":180,"TZ_MIN":420};
+  const SCHEMA = {"DIMENSIONS":[{"key":"day","label":"Ngày","col":null,"time":true},{"key":"hour","label":"Giờ trong ngày","col":null,"time":true},{"key":"user_name","label":"Người gọi","col":"user_name"},{"key":"tool_name","label":"Tool","col":"tool_name","mono":true},{"key":"client_app","label":"Ứng dụng","col":null},{"key":"ok","label":"Kết quả","col":"ok"}],"MEASURES":[{"key":"calls","label":"Lượt gọi","fmt":"int"},{"key":"blocked","label":"Không dùng được","fmt":"int","zeroable":true},{"key":"blockRate","label":"Tỉ lệ không dùng được","fmt":"pct","zeroable":true},{"key":"p50","label":"Thời gian trung vị","fmt":"ms"},{"key":"p95","label":"Thời gian p95","fmt":"ms"},{"key":"users","label":"Số người khác nhau","fmt":"int"},{"key":"tools","label":"Số tool khác nhau","fmt":"int"},{"key":"chars","label":"Ký tự trả về","fmt":"int"},{"key":"charsAvg","label":"Ký tự trả về / lượt","fmt":"int"},{"key":"tokens","label":"Token","fmt":"int"},{"key":"tokensAvg","label":"Token / lượt","fmt":"int"}],"PRESETS":[{"key":"today","label":"Hôm nay","days":1},{"key":"7d","label":"7 ngày","days":7},{"key":"30d","label":"30 ngày","days":30},{"key":"90d","label":"90 ngày","days":90}],"DEFAULT_PRESET":"30d","MAX_RANGE_DAYS":180,"TZ_MIN":420};
   // Bản xem trước tĩnh: số của khu biểu đồ nướng sẵn theo TỪNG cột nhóm, để mở
   // preview.html không cần backend vẫn đổi được "Nhóm theo". Bản live = null.
   const BAKED_EX = /*__EXPLORE__*/null;
@@ -1591,8 +1599,8 @@ h2 .seg-sm { align-self: center; }
     { el: 'p-calls-user', dim: 'user_name', measure: 'calls', kind: 'hbar' },
     { el: 'p-calls-tool', dim: 'tool_name', measure: 'calls', kind: 'hbar' },
     { el: 'p-blocked-tool', dim: 'tool_name', measure: 'blocked', kind: 'hbar' },
-    { el: 'p-chars-tool', dim: 'tool_name', measure: 'chars', kind: 'hbar' },
-    { el: 'p-charsavg-tool', dim: 'tool_name', measure: 'charsAvg', kind: 'hbar' },
+    { el: 'p-tokens-user', dim: 'user_name', measure: 'tokens', kind: 'hbar' },
+    { el: 'p-tokensavg-tool', dim: 'tool_name', measure: 'tokensAvg', kind: 'hbar' },
     { el: 'p-calls-hour', dim: 'hour', measure: 'calls', kind: 'bar' },
     { el: 'p-calls-app', dim: 'client_app', measure: 'calls', kind: 'hbar' },
   ];
@@ -1642,21 +1650,38 @@ h2 .seg-sm { align-self: center; }
     const W = 1000, max = Math.max(...rows.map((r) => r[me.key]), 0) || 1;
     const lab = (r) => esc(cut(String(r.key), 26));
     const tip = (r) => esc(`${r.key} — ${fmt(r[me.key], me.fmt)} · ${r.calls} lượt`);
-    // Phóng to thì cao hơn và chừa thêm chỗ dưới đáy cho nhãn ngày.
-    const H = zoom ? 300 : 150, PB = zoom ? 30 : 22, plot = H - PB;
+    // Phóng to thì cao hơn; đáy luôn chừa chỗ vì nhãn thời gian giờ luôn hiện.
+    const H = zoom ? 300 : 150, PB = zoom ? 32 : 24, plot = H - PB;
 
     /**
-     * Khổ nhỏ KHÔNG có nhãn trục: 29 ngày nhét vào một khung cao 150px thì chữ
-     * chồng lên nhau, đọc thành vệt xám. Ở đó hình dạng là thứ duy nhất cần
-     * thấy, muốn biết số thì rê chuột.
-     *
-     * Phóng to thì có chỗ — và lúc đó người xem đang hỏi con số cụ thể, nên
-     * hiện ngày dưới trục và giá trị trên đầu cột. Chỉ hiện thưa ra nếu nhiều
-     * nhóm quá, để chữ không dính nhau.
+     * `2026-08-10` dài quá cho khổ nhỏ — cắt còn `10-08` (ngày-tháng). Giờ thì
+     * `14` thành `14h` để không đọc nhầm thành ngày.
      */
-    const buoc = zoom ? Math.max(1, Math.ceil(rows.length / 16)) : 0;
-    const nhanTruc = (r, i, x) => (!zoom || i % buoc) ? ''
-      : `<text x="${x}" y="${H - 6}" font-size="12" text-anchor="middle" fill="var(--ink-3)">${esc(cut(String(r.key), 12))}</text>`;
+    const nhanNgan = (k) => {
+      const m = k.match(/^\d{4}-(\d{2})-(\d{2})$/);
+      if (m) return zoom ? k : `${m[2]}-${m[1]}`;
+      return /^\d{1,2}$/.test(k) ? `${k}h` : cut(k, 12);
+    };
+
+    /**
+     * NHÃN TRỤC THỜI GIAN LUÔN HIỆN, kể cả khổ nhỏ.
+     *
+     * Bản trước chỉ hiện khi phóng to, nhưng một dãy cột không có mốc thời gian
+     * nào thì không đọc được: thấy một cột cao mà không biết đó là 3 giờ sáng
+     * hay 3 giờ chiều. Với biểu đồ theo ngày/giờ thì cái trục CHÍNH LÀ nội dung.
+     *
+     * Chống chồng chữ bằng cách thưa ra theo số nhóm và theo khổ: khổ nhỏ chỉ
+     * còn ~6 mốc, phóng to lên ~16. Cột phân loại (người, tool) thì không cần —
+     * nhãn của chúng đã nằm ngay cạnh thanh.
+     *
+     * GIÁ TRỊ trên đầu cột thì vẫn chỉ hiện khi phóng to: khổ nhỏ mà thêm số
+     * nữa là hai tầng chữ chen nhau, mà lúc đó người xem đang đọc hình dạng chứ
+     * không đọc số.
+     */
+    const mocMax = zoom ? 16 : 6;
+    const buoc = Math.max(1, Math.ceil(rows.length / mocMax));
+    const nhanTruc = (r, i, x) => (!dim.time || i % buoc) ? ''
+      : `<text x="${x}" y="${H - 6}" font-size="${zoom ? 12 : 11}" text-anchor="middle" fill="var(--ink-3)">${esc(nhanNgan(String(r.key)))}</text>`;
     const nhanSo = (r, i, x, y) => (!zoom || i % buoc) ? ''
       : `<text x="${x}" y="${y - 6}" font-size="12" text-anchor="middle" fill="var(--ink-2)">${esc(fmt(r[me.key], me.fmt))}</text>`;
 

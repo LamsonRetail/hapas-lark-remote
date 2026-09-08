@@ -202,6 +202,7 @@ function groupOne(dim, { kept, blocked }) {
       chars: e.charsN ? e.chars : null,
       charsAvg: e.charsN ? Math.round(e.chars / e.charsN) : null,
       tokens: e.charsN ? Math.round(e.chars / CHARS_PER_TOKEN) : null,
+      tokensAvg: e.charsN ? Math.round(e.chars / e.charsN / CHARS_PER_TOKEN) : null,
     };
   });
 
