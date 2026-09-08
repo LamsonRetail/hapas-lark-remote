@@ -685,7 +685,9 @@ h2 .seg-sm { align-self: center; }
        "Cắm bằng" và "Token còn" đến từ bảng `machines`, không nằm trong
        audit_logs nên không có phép gộp nào dựng lại được chúng. Riêng "Token
        còn" là con số DUY NHẤT trên trang đòi hành động TRƯỚC khi hỏng. -->
-  <div class="zone">Chi tiết</div>
+  <!-- KHÔNG có vạch "Chi tiết" ở đây nữa: bảng bên dưới ẩn mặc định, nên vạch
+       đứng một mình dưới đáy trang như một khu rỗng — người đọc tưởng trang lỗi
+       hoặc chưa tải xong. Bấm KPI mới hiện, và lúc đó bảng tự có tiêu đề. -->
   <!-- ẨN mặc định, hiện khi bấm KPI "Người đã cắm".
        Bảng này dài 44 dòng và phần lớn thời gian không ai cần tới; để mở sẵn
        thì nó đẩy mọi thứ khác xuống dưới màn hình. Bấm con số mới hiện — mà
@@ -1619,7 +1621,7 @@ h2 .seg-sm { align-self: center; }
       const rows = dim.time ? all : all.slice().sort((a, b) => b[me.key] - a[me.key]).slice(0, cap);
 
       if (!rows.length) { setHtml(box, '<div class="p-empty">Không có số liệu</div>'); continue; }
-      setHtml(box, miniChart(rows, me, dim, s.kind));
+      setHtml(box, miniChart(rows, me, dim, s.kind, box.closest('.p-one')?.classList.contains('zoom')));
 
       const fkey = CLICK_TO_FILTER[s.dim];
       if (!fkey) continue;
@@ -1636,10 +1638,27 @@ h2 .seg-sm { align-self: center; }
   }
 
   /** SVG nhỏ gọn: ngang cho nhãn dài, dọc cho trục thời gian, đường cho tỉ lệ/p95. */
-  function miniChart(rows, me, dim, kind) {
+  function miniChart(rows, me, dim, kind, zoom) {
     const W = 1000, max = Math.max(...rows.map((r) => r[me.key]), 0) || 1;
     const lab = (r) => esc(cut(String(r.key), 26));
     const tip = (r) => esc(`${r.key} — ${fmt(r[me.key], me.fmt)} · ${r.calls} lượt`);
+    // Phóng to thì cao hơn và chừa thêm chỗ dưới đáy cho nhãn ngày.
+    const H = zoom ? 300 : 150, PB = zoom ? 30 : 22, plot = H - PB;
+
+    /**
+     * Khổ nhỏ KHÔNG có nhãn trục: 29 ngày nhét vào một khung cao 150px thì chữ
+     * chồng lên nhau, đọc thành vệt xám. Ở đó hình dạng là thứ duy nhất cần
+     * thấy, muốn biết số thì rê chuột.
+     *
+     * Phóng to thì có chỗ — và lúc đó người xem đang hỏi con số cụ thể, nên
+     * hiện ngày dưới trục và giá trị trên đầu cột. Chỉ hiện thưa ra nếu nhiều
+     * nhóm quá, để chữ không dính nhau.
+     */
+    const buoc = zoom ? Math.max(1, Math.ceil(rows.length / 16)) : 0;
+    const nhanTruc = (r, i, x) => (!zoom || i % buoc) ? ''
+      : `<text x="${x}" y="${H - 6}" font-size="12" text-anchor="middle" fill="var(--ink-3)">${esc(cut(String(r.key), 12))}</text>`;
+    const nhanSo = (r, i, x, y) => (!zoom || i % buoc) ? ''
+      : `<text x="${x}" y="${y - 6}" font-size="12" text-anchor="middle" fill="var(--ink-2)">${esc(fmt(r[me.key], me.fmt))}</text>`;
 
     if (kind === 'hbar') {
       const rowH = 26, LW = 300, PR = 110, track = W - LW - PR;
@@ -1652,24 +1671,32 @@ h2 .seg-sm { align-self: center; }
       }).join('') + '</svg>';
     }
 
-    const H = 150, PB = 22, plot = H - PB;
     if (kind === 'bar') {
       const bw = W / rows.length;
-      return `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">` + rows.map((r, i) => {
-        const h = Math.max(1, (r[me.key] / max) * (plot - 6)), x = i * bw;
+      // Phóng to thì KHÔNG kéo giãn ngang nữa (`meet` thay cho `none`), nếu
+      // không chữ nhãn bị bóp méo theo tỉ lệ khung.
+      return `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="${zoom ? 'xMidYMid meet' : 'none'}">` + rows.map((r, i) => {
+        const h = Math.max(1, (r[me.key] / max) * (plot - (zoom ? 22 : 6))), x = i * bw;
         return `<g data-k="${esc(String(r.key))}"><title>${tip(r)}</title>`
-          + `<rect x="${x + 1}" y="${plot - h}" width="${Math.max(1, bw - 2)}" height="${h}" rx="2" fill="var(--good)"/></g>`;
+          + `<rect x="${x + 1}" y="${plot - h}" width="${Math.max(1, bw - 2)}" height="${h}" rx="2" fill="var(--good)"/>`
+          + nhanSo(r, i, x + bw / 2, plot - h) + nhanTruc(r, i, x + bw / 2) + '</g>';
       }).join('') + '</svg>';
     }
 
     // Đường: điểm cách đều, nối bằng polyline. Dùng cho tỉ lệ và p95 — hai thứ
     // đọc theo XU HƯỚNG chứ không theo độ lớn từng cột.
-    const step = rows.length > 1 ? W / (rows.length - 1) : 0;
-    const pts = rows.map((r, i) => `${i * step},${(plot - (r[me.key] / max) * (plot - 6)).toFixed(1)}`).join(' ');
-    return `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">`
+    // Chừa lề hai bên khi phóng to, nếu không điểm đầu và điểm cuối nằm sát mép
+    // và nhãn ngày của chúng bị cắt mất một nửa.
+    const ML = zoom ? 46 : 0, MR = zoom ? 46 : 0, tw = W - ML - MR;
+    const step = rows.length > 1 ? tw / (rows.length - 1) : 0;
+    const yOf = (r) => +(plot - (r[me.key] / max) * (plot - (zoom ? 22 : 6))).toFixed(1);
+    const xOf = (i) => ML + i * step;
+    const pts = rows.map((r, i) => `${xOf(i)},${yOf(r)}`).join(' ');
+    return `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="${zoom ? 'xMidYMid meet' : 'none'}">`
       + `<polyline points="${pts}" fill="none" stroke="var(--accent, var(--good))" stroke-width="2.5"/>`
       + rows.map((r, i) => `<g data-k="${esc(String(r.key))}"><title>${tip(r)}</title>`
-        + `<circle cx="${i * step}" cy="${(plot - (r[me.key] / max) * (plot - 6)).toFixed(1)}" r="3.5" fill="var(--accent, var(--good))"/></g>`).join('')
+        + `<circle cx="${xOf(i)}" cy="${yOf(r)}" r="3.5" fill="var(--accent, var(--good))"/>`
+        + nhanSo(r, i, xOf(i), yOf(r)) + nhanTruc(r, i, xOf(i)) + '</g>').join('')
       + '</svg>';
   }
 
