@@ -521,7 +521,11 @@ h2 .seg-sm { align-self: center; }
 /* Khung được phóng: chiếm cả hai cột của .p-grid nếu có, và cho SVG cao hơn.
    Bảng chứa nó cũng nhảy ra hết chiều ngang lưới .panels.                    */
 .p-one.zoom { grid-column: 1 / -1; }
-.p-one.zoom .p-c { min-height: 320px; }
+/* Chi ep chieu cao cho bieu do TRUC THOI GIAN (cot/duong): chung ve theo
+   khung co dinh nen can cho. Thanh ngang cao theo SO DONG — ep 320px khi no
+   chi co 1 dong la chua ra 290px trong, trang trong nhu bi loi. */
+.p-one.zoom .p-c[data-kind="bar"],
+.p-one.zoom .p-c[data-kind="line"] { min-height: 320px; }
 .p-one.zoom .p-c svg { max-height: 62vh; }
 .panels .panel:has(.p-one.zoom) { grid-column: 1 / -1; }
 </style>
@@ -1647,6 +1651,11 @@ h2 .seg-sm { align-self: center; }
       const rows = dim.time ? all : all.slice().sort((a, b) => b[me.key] - a[me.key]).slice(0, cap);
 
       if (!rows.length) { setHtml(box, '<div class="p-empty">Không có số liệu</div>'); continue; }
+      // Đánh dấu loại biểu đồ lên ô chứa: CSS cần biết để chỉ ép chiều cao tối
+      // thiểu cho biểu đồ TRỤC THỜI GIAN. Thanh ngang cao theo số dòng, ép nó
+      // 320px khi chỉ có 1 dòng là chừa ra 290px trống — đúng cái làm trang
+      // trông như bị lỗi.
+      box.dataset.kind = s.kind;
       setHtml(box, miniChart(rows, me, dim, s.kind, box.closest('.p-one')?.classList.contains('zoom')));
 
       const fkey = CLICK_TO_FILTER[s.dim];

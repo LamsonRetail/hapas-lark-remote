@@ -516,6 +516,10 @@ h2 .seg-sm { align-self: center; }
 /* Khung được phóng: chiếm cả hai cột của .p-grid nếu có, và cho SVG cao hơn.
    Bảng chứa nó cũng nhảy ra hết chiều ngang lưới .panels.                    */
 .p-one.zoom { grid-column: 1 / -1; }
-.p-one.zoom .p-c { min-height: 320px; }
+/* Chi ep chieu cao cho bieu do TRUC THOI GIAN (cot/duong): chung ve theo
+   khung co dinh nen can cho. Thanh ngang cao theo SO DONG — ep 320px khi no
+   chi co 1 dong la chua ra 290px trong, trang trong nhu bi loi. */
+.p-one.zoom .p-c[data-kind="bar"],
+.p-one.zoom .p-c[data-kind="line"] { min-height: 320px; }
 .p-one.zoom .p-c svg { max-height: 62vh; }
 .panels .panel:has(.p-one.zoom) { grid-column: 1 / -1; }

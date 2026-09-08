@@ -1123,6 +1123,11 @@
       const rows = dim.time ? all : all.slice().sort((a, b) => b[me.key] - a[me.key]).slice(0, cap);
 
       if (!rows.length) { setHtml(box, '<div class="p-empty">Không có số liệu</div>'); continue; }
+      // Đánh dấu loại biểu đồ lên ô chứa: CSS cần biết để chỉ ép chiều cao tối
+      // thiểu cho biểu đồ TRỤC THỜI GIAN. Thanh ngang cao theo số dòng, ép nó
+      // 320px khi chỉ có 1 dòng là chừa ra 290px trống — đúng cái làm trang
+      // trông như bị lỗi.
+      box.dataset.kind = s.kind;
       setHtml(box, miniChart(rows, me, dim, s.kind, box.closest('.p-one')?.classList.contains('zoom')));
 
       const fkey = CLICK_TO_FILTER[s.dim];
