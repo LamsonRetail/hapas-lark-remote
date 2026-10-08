@@ -39,8 +39,13 @@ export const config = {
 
   dataDir: process.env.DATA_DIR || path.join(ROOT, '.data'),
 
-  // offline_access BẮT BUỘC, thiếu là không có refresh_token
-  scopes: (process.env.LARK_SCOPES || 'offline_access').split(/\s+/).filter(Boolean),
+  // Luôn xin refresh token và quyền Base legacy mà API sửa form yêu cầu.
+  // Giữ các scope riêng trong môi trường, kể cả khi .env cũ chưa có bitable:app.
+  scopes: [...new Set([
+    'offline_access',
+    'bitable:app',
+    ...(process.env.LARK_SCOPES || '').split(/\s+/).filter(Boolean),
+  ])],
 };
 
 /**

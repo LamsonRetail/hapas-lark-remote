@@ -78,6 +78,14 @@ chết âm thầm.
 **`offline_access` là bắt buộc.** Thiếu nó vẫn có access_token nhưng không có
 refresh_token, 2 tiếng sau user phải đăng nhập lại.
 
+**Sửa form Base cần `bitable:app`.** Server luôn bổ sung scope này và
+`offline_access` khi đăng nhập, bên cạnh các scope trong `LARK_SCOPES`, kể cả khi
+`.env` cũ chưa khai báo. Trong Lark Developer Console, cấp quyền
+`bitable:app` cho user của app có ID bằng `LARK_APP_ID`, phát hành phiên bản và
+hoàn tất phê duyệt của tenant. Sau khi triển khai code mới, khởi động lại server
+và đăng nhập/ủy quyền lại connector để lấy token có quyền mới. Thay đổi code
+không tự cấp quyền trên Lark hoặc nâng quyền của token hiện có.
+
 **Refresh token dùng được đúng một lần.** Lark xoay token mỗi lần refresh và giết
 ngay cái cũ; dùng lại → thu hồi cả chuỗi, user bị đăng xuất. Vì thế
 `getValidAccessToken()` khoá theo từng user **và đọc lại trạng thái sau khi giành
