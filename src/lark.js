@@ -66,7 +66,10 @@ export async function fetchRetry(url, init, { tries = 3, timeoutMs = 30000 } = {
  * Thử lại an toàn với MỌI động từ: bị chặn tần suất nghĩa là Lark chưa xử lý
  * request, không có gì để nhân đôi.
  */
-const isRateLimited = (code, msg) => code === 9499 || /rate limit|too many request/i.test(msg || '');
+// 800004135 "the method：OpenAPIUpdateField limited" = hạn mức base/v3 (gọi dồn dập), không phải
+// "không hỗ trợ" — đo 21/10: chờ rồi gọi lại là qua.
+const isRateLimited = (code, msg) =>
+  code === 9499 || code === 800004135 || /rate limit|too many request/i.test(msg || '');
 const RATE_TRIES = 3;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 

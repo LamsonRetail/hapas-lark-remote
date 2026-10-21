@@ -389,6 +389,7 @@ Cả sáu tìm ra bằng cách đối chiếu tay với `lark-cli --dry-run`. **
 - **`/authorize` luôn mở device flow mới**, kể cả khi user đã đăng nhập trước đó — server không biết ai đang mở trình duyệt. Đặt cookie sau lần đăng nhập đầu sẽ bỏ được bước duyệt lại trên Lark.
 - **`oauth.json` chỉ phình.** Mỗi lần thêm connector là một client DCR mới, không có cơ chế dọn client không còn token.
 - **Không có tool tạo Base, tạo trường Base, tạo sự kiện lịch.** Scope đã có, chỉ thiếu tool — tạm dùng `lark_api_call`.
+- **Cấu hình Base qua base/v3 (21/10/2026):** `base_view_config` (lọc/sắp theo cột công thức, nhóm theo Lookup, thứ tự cột), `base_field_update` (đổi tên cột Lookup/Nút — đọc định nghĩa cũ rồi gửi đủ vì PUT thay cả cột), `base_form_config`, `base_workflow_get/update`, `base_button_bind` (luôn gắn bằng ID cột: gọi bằng tên thì Lark không đồng bộ trigger), kèm `base_field_list/view_list/form_list`. Mọi trigger automation (sửa dòng, hẹn giờ, nhắc ngày, nút) đều tạo được qua API. `800004135 ...limited` là giới hạn tần suất — `larkApi` tự gọi lại. Test offline: `npm run test:base`.
 - **Tool phụ thuộc máy user** (`local_media_transcribe`, tải file về đĩa) không port được, giữ ở bản desktop.
 - **Attendance (chấm công)** — nhóm duy nhất của [lark-cli](https://github.com/larksuite/cli) chưa có tool tương ứng. API đòi quyền riêng mà app có thể chưa được cấp.
 - **Duyệt/từ chối đơn — cố ý không làm.** Phê duyệt có hệ quả pháp lý và tài chính, không nên để AI bấm. `approval_search` chỉ đọc.

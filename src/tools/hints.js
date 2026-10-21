@@ -28,6 +28,10 @@ export const READ_ONLY = new Set([
   'base_data_query',
   'base_url_resolve',
   'base_workflow_list',
+  'base_workflow_get',
+  'base_field_list',
+  'base_view_list',
+  'base_form_list',
   'dashboard_block_list',
   'task_search',
   'approval_search',
@@ -65,6 +69,11 @@ export const DESTRUCTIVE = new Set([
   'whiteboard_update', // ghi đè bảng trắng
   'whiteboard_update_from_source',
   'base_workflow_enable', // bật/tắt automation đang chạy
+  'base_workflow_update', // thay cả automation
+  'base_view_config', // ghi đè lọc/sắp/nhóm/cột của view
+  'base_field_update', // thay cả định nghĩa cột
+  'base_form_config', // đổi form, có thể mở chia sẻ ra ngoài
+  'base_button_bind', // thay automation gắn với nút
   'lark_api_call', // cửa thoát hiểm: làm được mọi thứ
 ]);
 
