@@ -17,7 +17,8 @@
     "revoke": "node revoke.js",
     "token": "node token.js",
     "keepalive": "node src/keepalive.js",
-    "test:write": "node test/smoke-write.js"
+    "test:write": "node test/smoke-write.js",
+    "test:base": "node --test test/base-config.js"
   },
   "engines": {
     "node": ">=22"
